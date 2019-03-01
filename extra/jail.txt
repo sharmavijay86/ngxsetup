@@ -1,0 +1,8 @@
+[xmlrpc]
+enabled = true
+filter = xmlrpc
+action = iptables[name=xmlrpc, port=http, protocol=tcp]
+logpath = /var/log/nginx/access.log
+bantime = 43600
+maxretry = 2
+

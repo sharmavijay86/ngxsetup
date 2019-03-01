@@ -1,0 +1,30 @@
+# Define which servers to include in the load balancing scheme. 
+# It's best to use the servers' private IPs for better performance and security.
+# You can find the private IPs at your UpCloud control panel Network section.
+
+upstream backend {
+   server 10.1.0.101; 
+   server 10.1.0.102;
+   server 10.1.0.103;
+}
+
+# This server accepts all traffic to port 80 and passes it to the upstream. 
+# Notice that the upstream name and the proxy_pass need to match.
+
+server {
+   listen 80; 
+
+   location / {
+      proxy_pass http://backend;
+   }
+}
+server {
+   listen 443 ssl;
+   server_name domain_name;
+   ssl_certificate /etc/letsencrypt/live/domain_name/cert.pem;
+   ssl_certificate_key /etc/letsencrypt/live/domain_name/privkey.pem;
+
+   location / {
+      proxy_pass http://backend;
+   }
+}

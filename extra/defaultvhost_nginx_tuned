@@ -1,0 +1,127 @@
+##
+
+server {
+	listen 443 ssl http2;
+	root /var/www/html;
+	index index.php index.html index.htm;
+	# Make site accessible from http://localhost/
+	server_name localhost;
+	#ssl_certificate /etc/ssl/certs/apache-selfsigned.crt;
+	ssl_certificate /etc/ssl/certs/cloudflare.crt;
+        #ssl_certificate_key /etc/ssl/private/apache-selfsigned.key;
+        ssl_certificate_key /etc/ssl/private/cloudflare.key;
+	set $skip_cache 0;
+
+    # POST requests and urls with a query string should always go to PHP
+    if ($request_method = POST) {
+        set $skip_cache 1;
+    }
+    if ($query_string != "") {
+        set $skip_cache 1;
+    }
+
+    # Don't cache uris containing the following segments
+    if ($request_uri ~* "/wp-admin/|/xmlrpc.php|wp-.*.php|/feed/|index.php|sitemap(_index)?.xml") {
+        set $skip_cache 1;
+    }
+         if ($request_uri ~* "/*.xml") {
+       set $skip_cache 1;
+    }
+	if ($request_uri ~* "/index.php") {
+       set $skip_cache 1;
+    }
+
+
+    # Don't use the cache for logged in users or recent commenters
+    if ($http_cookie ~* "comment_author|wordpress_[a-f0-9]+|wp-postpass|wordpress_no_cache|wordpress_logged_in") {
+        set $skip_cache 1;
+    }
+
+	location / {
+		#try_files /wp-content/cache/supercache/$http_host/$cache_uri/index.html $uri $uri/ /index.php?$args;
+	try_files $uri $uri/ /index.php?$args;
+	}
+	location ~ /purge(/.*) {
+	    fastcgi_cache_purge WORDPRESS "$scheme$request_method$host$1";
+	}	
+
+	location /mysql {
+	   alias /usr/share/phpmyadmin/;
+	}
+	location ~ ^/xmlrpc.php {
+     		deny all;
+    	}
+	location ~* ^/wp-content/uploads/.*.(html|htm|shtml|php|js|swf)$ {
+    		deny all;
+	}
+	location = /favicon.ico { log_not_found off; access_log off; }
+	# pass the PHP scripts to FastCGI server listening on 127.0.0.1:9000
+	#
+	location ~ \.php$ {
+		try_files $uri =404; 
+		fastcgi_split_path_info ^(.+\.php)(/.+)$;
+		fastcgi_pass_header Set-Cookie;
+                fastcgi_pass_header Cookie;
+                fastcgi_ignore_headers Cache-Control Expires Set-Cookie;
+                #fastcgi_pass unix:/run/php/php5.6-fpm.sock;
+                #fastcgi_pass unix:/run/php/php7.0-fpm.sock;
+                #fastcgi_pass unix:/run/php/php7.1-fpm.sock;
+                #fastcgi_pass unix:/run/php/php7.2-fpm.sock;
+                fastcgi_pass unix:/run/php/php7.3-fpm.sock;
+                fastcgi_index index.php;
+                fastcgi_read_timeout 300;
+                fastcgi_connect_timeout 300;
+                fastcgi_send_timeout 300;
+                include fastcgi_params;
+                fastcgi_param SCRIPT_FILENAME $document_root$fastcgi_script_name$request_filename;
+        #       fastcgi_cache_key $scheme$host$request_uri$request_method;
+         #       fastcgi_buffer_size 128k;
+         #       fastcgi_buffers 4 256k;
+                        ## fast cgi custom
+                fastcgi_cache_bypass $skip_cache;
+                fastcgi_no_cache $skip_cache;
+                fastcgi_cache WORDPRESS;
+          #      fastcgi_cache_valid   30m;
+		#fastcgi_cache_methods GET HEAD;
+
+	}
+	# Prefetch DNS
+	pagespeed EnableFilters insert_dns_prefetch;
+
+	# HTTPS Support
+	pagespeed FetchHttps enable;
+
+	# PageSpeed Filters
+
+	# Remove WHITESPACE & Comments from HTML
+	pagespeed EnableFilters collapse_whitespace,remove_comments;
+
+	# CSS Minification
+	pagespeed EnableFilters combine_css,rewrite_css;
+
+	# Enable JavaScript Library Offload
+	pagespeed EnableFilters canonicalize_javascript_libraries;
+	# JS Minification
+	pagespeed EnableFilters combine_javascript,rewrite_javascript;
+
+	# Images Optimization
+	pagespeed EnableFilters lazyload_images;
+	pagespeed EnableFilters rewrite_images;
+	pagespeed EnableFilters convert_jpeg_to_progressive,convert_png_to_jpeg,convert_jpeg_to_webp,convert_to_webp_lossless;
+	pagespeed UseExperimentalJsMinifier on;
+	# CDN Support
+	# pagespeed MapRewriteDomain cdn.example.com www.example.com;
+
+	include common/status.conf;
+	include common/expires.conf;
+	include common/pagespeed.conf;
+	include common/locations.conf;
+	include common/protect-system-files.conf;
+
+}
+
+server {
+	listen 80 ;
+	server_name localhost;
+	return 301 https://$host$request_uri;
+}
