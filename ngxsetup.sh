@@ -1,8 +1,41 @@
 #!/bin/bash
+apt-get update
+apt-get install vim curl gcc htop sysstat unzip wget ufw fail2ban makepasswd -y
+apt-get install python-software-properties -y
+apt-get install software-properties-common -y
+apt-get install php-fpm php-mysql php-gd php-mcrypt php-curl php php-cgi php-cli php-json php-memcached php-mbstring php-xml memcached -y
+wget -O /tmp/phpmyadmin.zip https://files.phpmyadmin.net/phpMyAdmin/4.8.0/phpMyAdmin-4.8.0-english.zip
+cd /tmp
+unzip phpmyadmin.zip
+mv phpMyAdmin-4.8.0-english /usr/share/phpmyadmin
+mkdir -p /var/www/html
+ln -s /usr/share/phpmyadmin /var/www/html/phpmyadmin
+rm -rf php*
+cd
+mkdir /usr/share/nginx/cache
+sed -i "s/ENABLED=\"false\"/ENABLED=\"true\"/g" /etc/default/sysstat
+service sysstat restart
+echo "real_ip_header CF-Connecting-IP;" >> /etc/nginx/conf.d/cf.conf
+for i in $(curl https://www.cloudflare.com/ips-v4)
+do echo "set_real_ip_from $i;" >> /etc/nginx/conf.d/cf.conf
+done
+for a in $(curl https://www.cloudflare.com/ips-v6)
+do echo "set_real_ip_from $a;" >> /etc/nginx/conf.d/cf.conf
+done
+cat /root/ngxsetup/extra/sysctl.txt >> /etc/sysctl.conf
+sysctl -p
+cp /root/ngxsetup/extra/fixperm /usr/local/bin/fixperm
+cp /root/ngxsetup/extra/vhostsetup /usr/local/bin/vhostsetup
+chmod +x  /usr/local/bin/fixperm
+head /dev/urandom | tr -dc A-Za-z0-9 | head -c 13 > /root/.pw
 
 if [[ "$EUID" -ne 0 ]]; then
 	echo -e "Sorry, you need to run this as root"
 	exit 1
+fi
+if [ "$PWD"=="/root/ngxsetup" ]; then
+	echo -e "your pwd should be /root/ngxsetup to run this script. Please clone this git in /root"
+	echo 1
 fi
 
 # Variables
@@ -201,7 +234,7 @@ case $OPTION in
 		if [[ ! -e /etc/nginx/nginx.conf ]]; then
 			mkdir -p /etc/nginx
 			cd /etc/nginx || exit 1
-			cp conf/nginx .
+			cp /root/ngxsetup/conf/nginx.conf .
 		fi
 		cd /usr/local/src/nginx/nginx-${NGINX_VER} || exit 1
 
@@ -314,7 +347,12 @@ case $OPTION in
 		then
 			cd /etc/apt/preferences.d/ || exit 1
 			echo -e "Package: nginx*\\nPin: release *\\nPin-Priority: -1" > nginx-block
-		fi
+		fi	
+		cp -r /root/ngxsetup/common /etc/nginx/
+		cp -r /root/ngxsetup/conf.d /etc/nginx/
+		cp -r /root/ngxsetup/extra /etc/nginx/
+		cp -r /root/ngxsetup/nginx/def* /etc/nginx/sites-available/
+		cp -r 
 
 		# Removing temporary Nginx and modules files
 		rm -r /usr/local/src/nginx
