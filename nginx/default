@@ -54,10 +54,10 @@ server {
 		fastcgi_pass_header Set-Cookie;
                 fastcgi_pass_header Cookie;
                 fastcgi_ignore_headers Cache-Control Expires Set-Cookie;
-                fastcgi_pass unix:/run/php/php7.0-fpm.sock;
+                #fastcgi_pass unix:/run/php/php7.0-fpm.sock;
 		#fastcgi_pass unix:/run/php/php5.6-fpm.sock;
                 #fastcgi_pass unix:/run/php/php7.1-fpm.sock;
-                #fastcgi_pass unix:/run/php/php7.2-fpm.sock;
+                fastcgi_pass unix:/run/php/php7.2-fpm.sock;
 		#fastcgi_pass unix:/run/php/php7.3-fpm.sock;
                 fastcgi_index index.php;
                 fastcgi_read_timeout 300;
@@ -68,7 +68,7 @@ server {
                 fastcgi_cache_bypass $skip_cache;
                 fastcgi_no_cache $skip_cache;
                 fastcgi_cache WORDPRESS;
-                fastcgi_cache_valid  60m;
+                fastcgi_cache_valid  5m;
 
 	}
 	# Prefetch DNS
