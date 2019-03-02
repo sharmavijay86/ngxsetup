@@ -350,6 +350,7 @@ case $OPTION in
 
 		# Removing temporary Nginx and modules files
 		rm -r /usr/local/src/nginx
+		apt-get remove apache2
 
 		# We're done !
 		echo "Installation done."
