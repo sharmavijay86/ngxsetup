@@ -1,33 +1,6 @@
 #!/bin/bash
 apt-get update
 apt-get install vim curl gcc htop sysstat unzip wget ufw fail2ban makepasswd -y
-apt-get install python-software-properties -y
-apt-get install software-properties-common -y
-apt-get install php-fpm php-mysql php-gd php-mcrypt php-curl php php-cgi php-cli php-json php-memcached php-mbstring php-xml memcached -y
-wget -O /tmp/phpmyadmin.zip https://files.phpmyadmin.net/phpMyAdmin/4.8.0/phpMyAdmin-4.8.0-english.zip
-cd /tmp
-unzip phpmyadmin.zip
-mv phpMyAdmin-4.8.0-english /usr/share/phpmyadmin
-mkdir -p /var/www/html
-ln -s /usr/share/phpmyadmin /var/www/html/phpmyadmin
-rm -rf php*
-cd
-mkdir /usr/share/nginx/cache
-sed -i "s/ENABLED=\"false\"/ENABLED=\"true\"/g" /etc/default/sysstat
-service sysstat restart
-echo "real_ip_header CF-Connecting-IP;" >> /etc/nginx/conf.d/cf.conf
-for i in $(curl https://www.cloudflare.com/ips-v4)
-do echo "set_real_ip_from $i;" >> /etc/nginx/conf.d/cf.conf
-done
-for a in $(curl https://www.cloudflare.com/ips-v6)
-do echo "set_real_ip_from $a;" >> /etc/nginx/conf.d/cf.conf
-done
-cat /root/ngxsetup/extra/sysctl.txt >> /etc/sysctl.conf
-sysctl -p
-cp /root/ngxsetup/extra/fixperm /usr/local/bin/fixperm
-cp /root/ngxsetup/extra/vhostsetup /usr/local/bin/vhostsetup
-chmod +x  /usr/local/bin/fixperm
-head /dev/urandom | tr -dc A-Za-z0-9 | head -c 13 > /root/.pw
 
 if [[ "$EUID" -ne 0 ]]; then
 	echo -e "Sorry, you need to run this as root"
@@ -55,7 +28,6 @@ echo ""
 echo "What do you want to do?"
 echo "   1) Install or update Nginx"
 echo "   2) Uninstall Nginx"
-echo "   3) Update the script"
 echo "   4) Exit"
 echo ""
 while [[ $OPTION !=  "1" && $OPTION != "2" && $OPTION != "3" && $OPTION != "4" ]]; do
@@ -132,7 +104,7 @@ case $OPTION in
 
 		# Dependencies
 		apt-get update
-		apt-get install -y build-essential ca-certificates wget curl libpcre3 libpcre3-dev autoconf unzip automake libtool tar git libssl-dev zlib1g-dev uuid-dev lsb-release
+		apt-get install -y build-essential ca-certificates wget curl libpcre3 libpcre3-dev autoconf unzip automake libtool tar git libssl-dev zlib1g-dev uuid-dev lsb-release vim htop sysstat ufw fail2ban makepasswd -y
 
 		# PageSpeed
 		if [[ "$PAGESPEED" = 'y' ]]; then
@@ -350,9 +322,31 @@ case $OPTION in
 		fi	
 		cp -r /root/ngxsetup/common /etc/nginx/
 		cp -r /root/ngxsetup/conf.d /etc/nginx/
-		cp -r /root/ngxsetup/extra /etc/nginx/
 		cp -r /root/ngxsetup/nginx/def* /etc/nginx/sites-available/
-		cp -r 
+		apt-get install php-fpm php-mysql php-gd php-curl php php-cgi php-cli php-json php-memcached php-mbstring php-xml memcached -y
+		wget -O /tmp/phpmyadmin.zip https://files.phpmyadmin.net/phpMyAdmin/4.8.0/phpMyAdmin-4.8.0-english.zip
+		cd /tmp
+		unzip phpmyadmin.zip
+		mv phpMyAdmin-4.8.0-english /usr/share/phpmyadmin
+		mkdir -p /var/www/html
+		ln -s /usr/share/phpmyadmin /var/www/html/phpmyadmin
+		rm -rf php*
+		cd
+		sed -i "s/ENABLED=\"false\"/ENABLED=\"true\"/g" /etc/default/sysstat
+		systemctl restart sysstat
+		echo "real_ip_header CF-Connecting-IP;" >> /etc/nginx/conf.d/cf.conf
+		for i in $(curl https://www.cloudflare.com/ips-v4)
+		do echo "set_real_ip_from $i;" >> /etc/nginx/conf.d/cf.conf
+		done
+		for a in $(curl https://www.cloudflare.com/ips-v6)
+		do echo "set_real_ip_from $a;" >> /etc/nginx/conf.d/cf.conf
+		done
+		cat /root/ngxsetup/extra/sysctl.txt >> /etc/sysctl.conf
+		sysctl -p
+		cp /root/ngxsetup/extra/fixperm /usr/local/bin/fixperm
+		cp /root/ngxsetup/extra/vhostsetup /usr/local/bin/vhostsetup
+		chmod +x  /usr/local/bin/fixperm
+		head /dev/urandom | tr -dc A-Za-z0-9 | head -c 13 > /root/.pw
 
 		# Removing temporary Nginx and modules files
 		rm -r /usr/local/src/nginx
@@ -400,16 +394,7 @@ case $OPTION in
 
 	exit
 	;;
-	3) # Update the script
-		wget https://raw.githubusercontent.com/Angristan/nginx-autoinstall/master/nginx-autoinstall.sh -O nginx-autoinstall.sh
-		chmod +x nginx-autoinstall.sh
-		echo ""
-		echo "Update done."
-		sleep 2
-		./nginx-autoinstall.sh
-		exit
-	;;
-	4) # Exit
+	3) # Exit
 		exit
 	;;
 
