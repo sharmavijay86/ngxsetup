@@ -1,2 +1,2 @@
 #!/bin/bash
-chown -R www-data:www-data /var/www
+for i in `ls /var/www/`;do chown -R www-data:www-data /var/www/$i/wp-content;done
