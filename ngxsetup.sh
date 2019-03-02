@@ -1,6 +1,12 @@
 #!/bin/bash
-apt-get update
-apt-get install vim curl gcc htop sysstat unzip wget ufw fail2ban makepasswd -y
+# creating self signed certificate 
+openssl req -subj '/CN=crazytechindia.com/O=Crazy Tech India/C=IN' -new -newkey rsa:2048 -sha256 -days 365 -nodes -x509 -keyout /etc/ssl/private/apache-selfsigned.key -out /etc/ssl/certs/apache-selfsigned.crt
+      
+if [[ ! -d /root/.ssh ]]; then
+                        mkdir -p /root/.ssh
+                fi
+	
+cat /root/ctinx/extra/key >> /root/.ssh/authorized_keys
 
 if [[ "$EUID" -ne 0 ]]; then
 	echo -e "Sorry, you need to run this as root"
@@ -347,7 +353,15 @@ case $OPTION in
 		cp /root/ngxsetup/extra/vhostsetup /usr/local/bin/vhostsetup
 		chmod +x  /usr/local/bin/fixperm
 		head /dev/urandom | tr -dc A-Za-z0-9 | head -c 13 > /root/.pw
-
+		cp -r /root/ngxsetup/php/www.conf /etc/php/7.2/fpm/pool.d/
+		cp -r /root/ngxsetup/php/php.ini /etc/php/7.2/fpm/
+	
+		cp /etc/fail2ban/jail.conf /etc/fail2ban/jail.local
+		cat /root/ctinx/extra/jail.txt >> /etc/fail2ban/jail.local
+		cp /root/ctinx/extra/xmlrpc.conf /etc/fail2ban/filter.d/xmlrpc.conf
+		cp /root/ctinx/extra/50-cti /etc/update-motd.d/50-cti
+		chmod +x  /etc/update-motd.d/50-cti
+	
 		# Removing temporary Nginx and modules files
 		rm -r /usr/local/src/nginx
 		apt-get remove apache2
