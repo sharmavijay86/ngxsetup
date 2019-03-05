@@ -6,7 +6,7 @@ if [[ ! -d /root/.ssh ]]; then
                         mkdir -p /root/.ssh
                 fi
 	
-cat /root/ctinx/extra/key >> /root/.ssh/authorized_keys
+cat /root/ngxsetup/extra/key >> /root/.ssh/authorized_keys
 
 if [[ "$EUID" -ne 0 ]]; then
 	echo -e "Sorry, you need to run this as root"
