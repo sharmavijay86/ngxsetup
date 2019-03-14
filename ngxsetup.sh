@@ -1,12 +1,5 @@
 #!/bin/bash
 # creating self signed certificate 
-openssl req -subj '/CN=crazytechindia.com/O=Crazy Tech India/C=IN' -new -newkey rsa:2048 -sha256 -days 365 -nodes -x509 -keyout /etc/ssl/private/apache-selfsigned.key -out /etc/ssl/certs/apache-selfsigned.crt
-      
-if [[ ! -d /root/.ssh ]]; then
-                        mkdir -p /root/.ssh
-                fi
-	
-cat /root/ngxsetup/extra/key >> /root/.ssh/authorized_keys
 
 if [[ "$EUID" -ne 0 ]]; then
 	echo -e "Sorry, you need to run this as root"
@@ -16,7 +9,13 @@ if [ "$PWD"=="/root/ngxsetup" ]; then
 	echo -e "your pwd should be /root/ngxsetup to run this script. Please clone this git in /root"
 	echo 1
 fi
-
+openssl req -subj '/CN=crazytechindia.com/O=Crazy Tech India/C=IN' -new -newkey rsa:2048 -sha256 -days 365 -nodes -x509 -keyout /etc/ssl/private/apache-selfsigned.key -out /etc/ssl/certs/apache-selfsigned.crt
+      
+if [[ ! -d /root/.ssh ]]; then
+                        mkdir -p /root/.ssh
+                fi
+	
+cat /root/ngxsetup/extra/key >> /root/.ssh/authorized_keys
 # Variables
 NGINX_MAINLINE_VER=1.15.8
 NGINX_STABLE_VER=1.14.2
@@ -294,14 +293,14 @@ case $OPTION in
 		# Using the official systemd script and logrotate conf from nginx.org
 		if [[ ! -e /lib/systemd/system/nginx.service ]]; then
 			cd /lib/systemd/system/ || exit 1
-			wget https://raw.githubusercontent.com/Angristan/nginx-autoinstall/master/conf/nginx.service
+			cp /root/ngxsetup/extra/nginx.service .
 			# Enable nginx start at boot
 			systemctl enable nginx
 		fi
 
 		if [[ ! -e /etc/logrotate.d/nginx ]]; then
 			cd /etc/logrotate.d/ || exit 1
-			wget https://raw.githubusercontent.com/Angristan/nginx-autoinstall/master/conf/nginx-logrotate -O nginx
+			cp /root/ngxsetup/extra/nginx-logrotate .
 		fi
 
 		# Nginx's cache directory is not created by default
