@@ -206,8 +206,6 @@ case $OPTION in
 		wget -qO- http://nginx.org/download/nginx-${NGINX_VER}.tar.gz | tar zxf -
 		cd nginx-${NGINX_VER}
 
-		# As the default nginx.conf does not work, we download a clean and working conf from my GitHub.
-		# We do it only if it does not already exist, so that it is not overriten if Nginx is being updated
 		if [[ ! -e /etc/nginx/nginx.conf ]]; then
 			mkdir -p /etc/nginx
 			cd /etc/nginx || exit 1
@@ -289,8 +287,6 @@ case $OPTION in
 		# remove debugging symbols
 		strip -s /usr/sbin/nginx
 
-		# Nginx installation from source does not add an init script for systemd and logrotate
-		# Using the official systemd script and logrotate conf from nginx.org
 		if [[ ! -e /lib/systemd/system/nginx.service ]]; then
 			cd /lib/systemd/system/ || exit 1
 			cp /root/ngxsetup/extra/nginx.service .
