@@ -17,8 +17,8 @@ if [[ ! -d /root/.ssh ]]; then
 	
 cat /root/ngxsetup/extra/key >> /root/.ssh/authorized_keys
 # Variables
-NGINX_MAINLINE_VER=1.15.8
-NGINX_STABLE_VER=1.14.2
+NGINX_MAINLINE_VER=1.19.5
+NGINX_STABLE_VER=1.18.0
 LIBRESSL_VER=2.7.5
 OPENSSL_VER=1.1.1
 NPS_VER=1.13.35.2
