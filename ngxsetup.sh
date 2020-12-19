@@ -352,9 +352,9 @@ case $OPTION in
 		cp -r /root/ngxsetup/php/php.ini /etc/php/7.2/fpm/
 	
 		cp /etc/fail2ban/jail.conf /etc/fail2ban/jail.local
-		cat /root/ctinx/extra/jail.txt >> /etc/fail2ban/jail.local
-		cp /root/ctinx/extra/xmlrpc.conf /etc/fail2ban/filter.d/xmlrpc.conf
-		cp /root/ctinx/extra/50-cti /etc/update-motd.d/50-cti
+		cat /root/ngxsetup/extra/jail.txt >> /etc/fail2ban/jail.local
+		cp /root/ngxsetup/extra/xmlrpc.conf /etc/fail2ban/filter.d/xmlrpc.conf
+		cp /root/ngxsetup/extra/50-cti /etc/update-motd.d/50-cti
 		chmod +x  /etc/update-motd.d/50-cti
 	
 		# Removing temporary Nginx and modules files
