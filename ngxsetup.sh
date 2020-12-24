@@ -348,8 +348,9 @@ case $OPTION in
 		cp /root/ngxsetup/extra/vhostsetup /usr/local/bin/vhostsetup
 		chmod +x  /usr/local/bin/fixperm
 		head /dev/urandom | tr -dc A-Za-z0-9 | head -c 13 > /root/.pw
-		cp -r /root/ngxsetup/php/www.conf /etc/php/7.2/fpm/pool.d/
-		cp -r /root/ngxsetup/php/php.ini /etc/php/7.2/fpm/
+		cp -r /root/ngxsetup/php/www.conf /etc/php/7.4/fpm/pool.d/
+		cp -r /root/ngxsetup/php/php.ini /etc/php/7.4/fpm/
+		cp /root/ngxsetup/nginx/nginx.conf /etc/nginx/nginx.conf
 	
 		cp /etc/fail2ban/jail.conf /etc/fail2ban/jail.local
 		cat /root/ngxsetup/extra/jail.txt >> /etc/fail2ban/jail.local
