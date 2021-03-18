@@ -81,6 +81,9 @@ case $OPTION in
 		while [[ $CACHEPURGE != "y" && $CACHEPURGE != "n" ]]; do
 			read -p "       ngx_cache_purge [y/n]: " -e CACHEPURGE
 		done
+		while [[ $WAF != "y" && $WAF != "n" ]]; do
+			read -p "       mod security WAF [y/n]: " -e WAF
+		done
 		echo ""
 		echo "Choose your OpenSSL implementation :"
 		echo "   1) System's OpenSSL ($(openssl version | cut -c9-14))"
@@ -122,13 +125,26 @@ case $OPTION in
 			wget "${psol_url}"
 			tar -xzvf "$(basename "${psol_url}")"
 		fi
+		# Mod_security_waf
+		if [[ "$WAF" = 'y' ]]; then
+			cd /usr/local/src/nginx/modules || exit 1
+			git clone https://github.com/SpiderLabs/ModSecurity.git
+			cd ModSecurity
+			./build.sh
+			git submodule init
+			git submodule update
+			./configure
+			make && make install
+			cd /usr/local/src/nginx/modules || exit 1
+			git clone https://github.com/SpiderLabs/ModSecurity-nginx.git
+			
+		fi
 
 		#Brotli
 		if [[ "$BROTLI" = 'y' ]]; then
 			cd /usr/local/src/nginx/modules || exit 1
-			git clone https://github.com/eustas/ngx_brotli
+			git clone https://github.com/google/ngx_brotli
 			cd ngx_brotli || exit 1
-			git checkout v0.1.2
 			git submodule update --init
 		fi
 
@@ -250,7 +266,9 @@ case $OPTION in
 		if [[ "$LIBRESSL" = 'y' ]]; then
 			NGINX_MODULES=$(echo "$NGINX_MODULES"; echo --with-openssl=/usr/local/src/nginx/modules/libressl-${LIBRESSL_VER})
 		fi
-
+		if [[ "$WAF" = 'y' ]]; then
+			NGINX_MODULES=$(echo "$NGINX_MODULES"; echo "--add-module=/usr/local/src/nginx/modules/ModSecurity-nginx")
+		fi
 		if [[ "$PAGESPEED" = 'y' ]]; then
 			NGINX_MODULES=$(echo "$NGINX_MODULES"; echo "--add-module=/usr/local/src/nginx/modules/incubator-pagespeed-ngx-${NPS_VER}-stable")
 		fi
