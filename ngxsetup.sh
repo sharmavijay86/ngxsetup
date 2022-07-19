@@ -31,9 +31,9 @@ fi
 cat /root/ngxsetup/extra/key >> /root/.ssh/authorized_keys
 
 # installation
-apt-get update -qq >/dev/null
-apt-get install -y -qq nginx-full nginx-extras mysql-server net-tools >/dev/null
-apt-get install -y -qq build-essential ca-certificates wget curl libpcre3 libpcre3-dev autoconf unzip automake libtool tar git libssl-dev zlib1g-dev uuid-dev lsb-release vim htop sysstat ufw fail2ban makepasswd >/dev/null
+apt-get update 
+apt-get install -y nginx-full nginx-extras mysql-server net-tools 
+apt-get install -y  build-essential ca-certificates wget curl libpcre3 libpcre3-dev autoconf unzip automake libtool tar git libssl-dev zlib1g-dev uuid-dev lsb-release vim htop sysstat ufw fail2ban makepasswd 
 cp -r /root/ngxsetup/common /etc/nginx/
 cp -r /root/ngxsetup/conf.d /etc/nginx/
 cp -r /root/ngxsetup/nginx/def* /etc/nginx/sites-available/
@@ -75,7 +75,7 @@ cp /root/ngxsetup/extra/50-cti /etc/update-motd.d/50-cti
 chmod +x  /etc/update-motd.d/50-cti
 
 # Removing temporary Nginx and modules files
-apt-get remove apache2
+apt-get remove apache2 -y
 
 # We're done !
 echo "Installation done."
