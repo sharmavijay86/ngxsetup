@@ -37,7 +37,7 @@ apt-get install -y  build-essential ca-certificates wget curl libpcre3 libpcre3-
 cp -r /root/ngxsetup/common /etc/nginx/
 cp -r /root/ngxsetup/conf.d /etc/nginx/
 cp -r /root/ngxsetup/nginx/def* /etc/nginx/sites-available/
-
+cp -r /root/ngxsetup/nginx/nginx.conf /etc/nginx/
 #for ubuntu 22.04 with php8.1 version
 if [ $VER -eq 22 ]
 then 
