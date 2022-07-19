@@ -26,10 +26,10 @@ apt-get install -y build-essential ca-certificates wget curl libpcre3 libpcre3-d
 		cp -r /root/ngxsetup/conf.d /etc/nginx/
 		cp -r /root/ngxsetup/nginx/def* /etc/nginx/sites-available/
 		apt-get install php php-{fpm,mysql,gd,curl,cgi,cli,json,memcached,mbstring,xml} memcached -y
-		wget -O /tmp/phpmyadmin.zip https://files.phpmyadmin.net/phpMyAdmin/4.8.0/phpMyAdmin-4.8.0-english.zip
+		wget -O /tmp/phpmyadmin.zip https://files.phpmyadmin.net/phpMyAdmin/5.2.0/phpMyAdmin-5.2.0-english.zip
 		cd /tmp
 		unzip phpmyadmin.zip
-		mv phpMyAdmin-4.8.0-english /usr/share/phpmyadmin
+		mv phpMyAdmin-5.2.0-english /usr/share/phpmyadmin
 		mkdir -p /var/www/html
 		ln -s /usr/share/phpmyadmin /var/www/html/phpmyadmin
 		rm -rf php*
