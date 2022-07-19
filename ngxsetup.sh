@@ -13,7 +13,7 @@ fi
 check_pwd () {
 if [ "$PWD" != "/root/ngxsetup" ]; then
 	echo -e "your pwd should be /root/ngxsetup to run this script. Please clone this git in /root"
-	echo 1
+	exit 1
 fi
 }
 
