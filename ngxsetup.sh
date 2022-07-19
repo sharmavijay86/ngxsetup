@@ -32,7 +32,7 @@ cat /root/ngxsetup/extra/key >> /root/.ssh/authorized_keys
 
 # installation
 apt-get update 
-apt-get install -y nginx-extras mysql-server net-tools 
+apt-get install -y nginx-extras mysql-server net-tools python3-certbot-nginx
 apt-get install -y  build-essential ca-certificates wget curl libpcre3 libpcre3-dev autoconf unzip automake libtool tar git libssl-dev zlib1g-dev uuid-dev lsb-release vim htop sysstat ufw fail2ban makepasswd 
 cp -r /root/ngxsetup/common /etc/nginx/
 cp -r /root/ngxsetup/conf.d /etc/nginx/
