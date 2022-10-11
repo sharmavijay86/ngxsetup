@@ -76,6 +76,6 @@ chmod +x  /etc/update-motd.d/50-cti
 
 # Removing temporary Nginx and modules files
 apt-get remove apache2 -y
-
+history -c
 # We're done !
 echo "Installation done."
