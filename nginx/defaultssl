@@ -1,7 +1,7 @@
 ##
 
 server {
-	listen 443 ssl http2;
+	listen 443 ssl ;
 	root /var/www/html;
 	index index.php index.html index.htm;
 	# Make site accessible from http://localhost/
@@ -53,7 +53,7 @@ server {
 		 fastcgi_pass_header Set-Cookie;
                 fastcgi_pass_header Cookie;
                 fastcgi_ignore_headers Cache-Control Expires Set-Cookie;
-                fastcgi_pass unix:/run/php/php7.2-fpm.sock;
+                fastcgi_pass unix:/run/php/php7.4-fpm.sock;
                 #fastcgi_pass unix:/run/php/php7.0-fpm.sock;
                 fastcgi_index index.php;
                 fastcgi_read_timeout 300;
@@ -71,36 +71,9 @@ server {
                 fastcgi_cache_valid  5m;
 
 	}
-	# Prefetch DNS
-	pagespeed EnableFilters insert_dns_prefetch;
-
-	# HTTPS Support
-	pagespeed FetchHttps enable;
-
-	# PageSpeed Filters
-
-	# Remove WHITESPACE & Comments from HTML
-	pagespeed EnableFilters collapse_whitespace,remove_comments;
-
-	# CSS Minification
-	pagespeed EnableFilters combine_css,rewrite_css;
-
-	# Enable JavaScript Library Offload
-	pagespeed EnableFilters canonicalize_javascript_libraries;
-	# JS Minification
-	pagespeed EnableFilters combine_javascript,rewrite_javascript;
-
-	# Images Optimization
-	pagespeed EnableFilters lazyload_images;
-	pagespeed EnableFilters rewrite_images;
-	pagespeed EnableFilters convert_jpeg_to_progressive,convert_png_to_jpeg,convert_jpeg_to_webp,convert_to_webp_lossless;
-	pagespeed UseExperimentalJsMinifier on;
-	# CDN Support
-	# pagespeed MapRewriteDomain cdn.example.com www.example.com;
 
 	include common/status.conf;
 	include common/expires.conf;
-	include common/pagespeed.conf;
 	include common/locations.conf;
 	include common/protect-system-files.conf;
 

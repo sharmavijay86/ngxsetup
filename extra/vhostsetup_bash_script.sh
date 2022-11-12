@@ -46,10 +46,9 @@ w|W)
  echo "Your database user password is: $dpass" >> /root/$fname
  sed  "s/localhost/$dn www.$dn/g"  /etc/nginx/sites-available/default > /etc/nginx/sites-enabled/$fname
  sed -i  "s#/www/html#/www/$fname#g" /etc/nginx/sites-enabled/$fname
- mysql  -e "CREATE DATABASE ${dbn}" 
- mysql  -e "CREATE USER '${dbn}'@'localhost' IDENTIFIED BY'${dpass}';"
- mysql  -e "GRANT ALL PRIVILEGES ON ${dbn}.* to '${dbn}'@'localhost';"
- mysql  -e "FLUSH PRIVILEGES;"
+ mysql -u root -p`cat /root/.pw` -e "CREATE DATABASE ${dbn}" 
+ mysql -u root -p`cat /root/.pw` -e "GRANT ALL PRIVILEGES ON ${dbn}.* to '${dbn}'@'localhost' IDENTIFIED BY'${dpass}';"
+ mysql -u root -p`cat /root/.pw` -e "FLUSH PRIVILEGES;"
  wget -O /tmp/wordpress.zip  https://wordpress.org/latest.zip 
  cd /tmp
  unzip -o /tmp/wordpress.zip 
@@ -96,10 +95,9 @@ vs|VS)
  echo "Your database user password is: $dpass" >> /root/$fname
  sed  "s/localhost/$dn www.$dn/g"  /etc/nginx/sites-available/defaultssl > /etc/nginx/sites-enabled/$fname
  sed -i  "s#/www/html#/www/$fname#g" /etc/nginx/sites-enabled/$fname
- mysql  -e "CREATE DATABASE ${dbn}"
- mysql  -e "CREATE USER '${dbn}'@'localhost' IDENTIFIED BY'${dpass}';"
- mysql  -e "GRANT ALL PRIVILEGES ON ${dbn}.* to '${dbn}'@'localhost';"
- mysql  -e "FLUSH PRIVILEGES;"
+ mysql -u root -p`cat /root/.pw` -e "CREATE DATABASE ${dbn}"
+ mysql -u root -p`cat /root/.pw` -e "GRANT ALL PRIVILEGES ON ${dbn}.* to '${dbn}'@'localhost' IDENTIFIED BY'${dpass}';"
+ mysql -u root -p`cat /root/.pw` -e "FLUSH PRIVILEGES;"
  wget -O /tmp/wordpress.zip  https://wordpress.org/latest.zip
  cd /tmp
  unzip -o /tmp/wordpress.zip
