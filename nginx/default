@@ -34,7 +34,14 @@ server {
 	try_files $uri $uri/ /index.php?$args;
 	}
 	location /mysql {
-	   alias /usr/share/phpmyadmin/;
+  	  alias /usr/share/phpmyadmin;
+	  location ~ \.php$ {
+          include fastcgi_params;
+          fastcgi_param SCRIPT_FILENAME $request_filename;
+          fastcgi_split_path_info ^(.+\.php)(/.+)$;
+          fastcgi_pass unix:/run/php/php7.4-fpm.sock;
+          fastcgi_index index.php;
+          }
 	}
 	location ~ ^/xmlrpc.php {
      		deny all;
