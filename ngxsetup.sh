@@ -45,6 +45,14 @@ sed -i "s/memory_limit = .*/memory_limit = 1024M/" /etc/php/$PVER/fpm/php.ini
 sed -i "s/upload_max_filesize = .*/upload_max_filesize = 512M/" /etc/php/$PVER/fpm/php.ini
 sed -i "s/post_max_size = .*/post_max_size = 512M/" /etc/php/$PVER/fpm/php.ini
 sed -i "s/max_execution_time = .*/max_execution_time = 18000/" /etc/php/$PVER/fpm/php.ini
+sed -i "/^pm/s/dynamic/ondemand/g" /etc/php/$PVER/fpm/pool.d/www.conf
+sed -i "/^pm/s/5/$(nproc)/g" /etc/php/$PVER/fpm/pool.d/www.conf
+sed -i '/start_server/ s/^pm*/;pm/' /etc/php/$PVER/fpm/pool.d/www.conf
+sed -i '/min_spare_servers/ s/^pm*/;pm/' /etc/php/$PVER/fpm/pool.d/www.conf
+sed -i '/max_spare_servers/ s/^pm*/;pm/' /etc/php/$PVER/fpm/pool.d/www.conf
+sed -i '/idle_timeout/ s/^;pm*/pm/' /etc/php/$PVER/fpm/pool.d/www.conf
+sed -i '/max_requests/ s/^;pm*/pm/' /etc/php/$PVER/fpm/pool.d/www.conf
+sed -i '/max_requests/ s/500/5000/' /etc/php/$PVER/fpm/pool.d/www.conf
 
 wget -O /tmp/phpmyadmin.zip https://files.phpmyadmin.net/phpMyAdmin/5.2.0/phpMyAdmin-5.2.0-english.zip
 cd /tmp
