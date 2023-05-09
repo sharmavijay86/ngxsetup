@@ -1,6 +1,4 @@
 #!/bin/bash
-# Variables here
-VER=$(lsb_release  -r | awk '{print $2}' | cut -d . -f1)
 
 # function 1
 check_user () {
@@ -31,20 +29,23 @@ fi
 cat /root/ngxsetup/extra/key >> /root/.ssh/authorized_keys
 
 # installation
+export DEBIAN_FRONTEND=noninteractive
 apt-get update 
-apt-get install -y nginx-extras mariadb-server net-tools python3-certbot-nginx
-apt-get install -y  build-essential ca-certificates wget curl libpcre3 libpcre3-dev autoconf unzip automake libtool tar git libssl-dev zlib1g-dev uuid-dev lsb-release vim htop sysstat ufw fail2ban makepasswd 
+apt-get install -yq nginx-extras mariadb-server net-tools python3-certbot-nginx
+apt-get install -yq  build-essential ca-certificates wget curl libpcre3 libpcre3-dev autoconf unzip automake libtool tar git libssl-dev zlib1g-dev uuid-dev lsb-release vim htop sysstat ufw fail2ban makepasswd 
 cp -r /root/ngxsetup/common /etc/nginx/
 cp -r /root/ngxsetup/conf.d /etc/nginx/
 cp -r /root/ngxsetup/nginx/def* /etc/nginx/sites-available/
 cp -r /root/ngxsetup/nginx/nginx.conf /etc/nginx/
-#for ubuntu 22.04 with php8.1 version
-if [ $VER -eq 22 ]
-then 
-sed -i "s|7\.4|8\.1|" /etc/nginx/sites-available/def*
-fi
+#PHP settings
+apt-get install php php-{fpm,mysql,gd,curl,cgi,cli,json,memcached,mbstring,xml} memcached -yq
+export PVER=$(php -v | awk '/^PHP/{print $2}' | cut -d'.' -f1-2)
+sed -i "s|7\.4|$PVER|" /etc/nginx/sites-available/def*
+sed -i "s/memory_limit = .*/memory_limit = 1024M/" /etc/php/$PVER/fpm/php.ini
+sed -i "s/upload_max_filesize = .*/upload_max_filesize = 512M/" /etc/php/$PVER/fpm/php.ini
+sed -i "s/post_max_size = .*/post_max_size = 512M/" /etc/php/$PVER/fpm/php.ini
+sed -i "s/max_execution_time = .*/max_execution_time = 18000/" /etc/php/$PVER/fpm/php.ini
 
-apt-get install php php-{fpm,mysql,gd,curl,cgi,cli,json,memcached,mbstring,xml} memcached -y
 wget -O /tmp/phpmyadmin.zip https://files.phpmyadmin.net/phpMyAdmin/5.2.0/phpMyAdmin-5.2.0-english.zip
 cd /tmp
 unzip phpmyadmin.zip
