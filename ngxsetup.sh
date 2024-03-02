@@ -14,9 +14,22 @@ if [ "$PWD" != "/root/ngxsetup" ]; then
 	exit 1
 fi
 }
+# Function to install and secure MySQL
+install_mysql() {
+  sudo apt install mysql-server -y
+}
+
+# Function to install and secure MariaDB
+install_mariadb() {
+  sudo apt install mariadb-server -y
+}
+
 
 check_user
 check_pwd
+
+# Prompt user for selection
+read -p "Enter 'mysql' or press Enter for 'mariadb': " choice
 
 # generate temp ssl 
 openssl req -subj '/CN=crazytechindia.com/O=Crazy Tech India/C=IN' -new -newkey rsa:2048 -sha256 -days 365 -nodes -x509 -keyout /etc/ssl/private/apache-selfsigned.key -out /etc/ssl/certs/apache-selfsigned.crt
@@ -31,7 +44,16 @@ cat /root/ngxsetup/extra/key >> /root/.ssh/authorized_keys
 # installation
 export DEBIAN_FRONTEND=noninteractive
 apt-get update 
-apt-get install -yq nginx-extras mariadb-server net-tools python3-certbot-nginx
+# Check user input and call appropriate function
+if [[ "$choice" =~ ^[Mm]y[Ss]ql$ ]]; then
+  echo "Installing MySQL..."
+  install_mysql
+else
+  echo "Installing MariaDB (default)..."
+  install_mariadb
+fi
+echo "Database installation complete!"
+apt-get install -yq nginx-extrasnet-tools python3-certbot-nginx
 apt-get install -yq  build-essential ca-certificates wget curl libpcre3 libpcre3-dev autoconf unzip automake libtool tar git libssl-dev zlib1g-dev uuid-dev lsb-release vim htop sysstat ufw fail2ban makepasswd 
 cp -r /root/ngxsetup/common /etc/nginx/
 cp -r /root/ngxsetup/conf.d /etc/nginx/
