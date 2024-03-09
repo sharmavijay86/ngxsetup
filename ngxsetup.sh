@@ -108,5 +108,9 @@ chmod +x  /etc/update-motd.d/50-cti
 # Removing temporary Nginx and modules files
 apt-get remove apache2 -y
 history -c
+## installing wp cli 
+curl -O https://raw.githubusercontent.com/wp-cli/builds/gh-pages/phar/wp-cli.phar
+chmod +x wp-cli.phar
+sudo mv wp-cli.phar /usr/local/bin/wp
 # We're done !
 echo "Installation done."
