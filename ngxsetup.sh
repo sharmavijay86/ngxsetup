@@ -85,7 +85,7 @@ ln -s /usr/share/phpmyadmin /var/www/html/phpmyadmin
 rm -rf php*
 cd
 sed -i "s/ENABLED=\"false\"/ENABLED=\"true\"/g" /etc/default/sysstat
-systemctl restart sysstat
+systemctl enable sysstat && systemctl restart sysstat
 echo "real_ip_header CF-Connecting-IP;" >> /etc/nginx/conf.d/cf.conf
 for i in $(curl https://www.cloudflare.com/ips-v4)
 do echo "set_real_ip_from $i;" >> /etc/nginx/conf.d/cf.conf
