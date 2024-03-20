@@ -53,7 +53,7 @@ else
   install_mariadb
 fi
 echo "Database installation complete!"
-apt-get install -yq nginx-extrasnet-tools python3-certbot-nginx
+apt-get install -yq nginx-extras net-tools python3-certbot-nginx
 apt-get install -yq  build-essential ca-certificates wget curl libpcre3 libpcre3-dev autoconf unzip automake libtool tar git libssl-dev zlib1g-dev uuid-dev lsb-release vim htop sysstat ufw fail2ban makepasswd 
 cp -r /root/ngxsetup/common /etc/nginx/
 cp -r /root/ngxsetup/conf.d /etc/nginx/
