@@ -114,8 +114,8 @@ vs|VS)
  cd
  rm -rf /tmp/mdbpassw /tmp/wordpress/ /tmp/latest.zip > /dev/null 2>&1
  chown -R www-data:www-data /var/www/$fname
- sudo -u www-data  wp config create --dbname=$dbn --dbuser=$dbn --dbpass=$dpass
- sudo -u www-data wp core install --url=$dn --title="Crazy Tech India sample" --admin_user=wpadmin --admin_password=$dpass --admin_email=vijay@mevijay.dev  --skip-email
+ sudo -u www-data  wp config create --dbname=$dbn --dbuser=$dbn --dbpass=$dpass --path=/var/www/$fname
+ sudo -u www-data wp core install --url=$dn --title="Crazy Tech India sample" --admin_user=wpadmin --admin_password=$dpass --admin_email=vijay@mevijay.dev  --skip-email --path=/var/www/$fname
  echo "Checking Nginx configuration..."
  nginx -t &> /dev/null
  if [[ $? -eq 0 ]]; then
@@ -126,7 +126,7 @@ vs|VS)
    echo "Error found in Nginx configuration syntax. Please review and fix any errors."
  fi
  echo " setting up lets encrypt ....."
- certbot certonly --nginx -d $dn -d www.$dn  --agree-tos -m vijay@mevijay.dev
+ certbot certonly --nginx -d $dn -d www.$dn  --agree-tos -m vijay@mevijay.dev -n
   exit 0
 ;;
 
