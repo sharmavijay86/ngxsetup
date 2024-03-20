@@ -94,6 +94,8 @@ vs|VS)
  echo "Your database name is: $dbn" >> /root/$fname
  echo "Your database user is: $dbn" >> /root/$fname
  echo "Your database user password is: $dpass" >> /root/$fname
+ echo "Your website login id is: wpadmin " >> /root/$fname
+ echo "Your website wpadmin user password is: $dpass" >> /root/$fname
  sed  "s/localhost/$dn www.$dn/g"  /etc/nginx/sites-available/defaultssl > /etc/nginx/sites-enabled/$fname
  sed -i  "s#/www/html#/www/$fname#g" /etc/nginx/sites-enabled/$fname
  mysql  -e "CREATE DATABASE ${dbn}"
@@ -106,13 +108,26 @@ vs|VS)
  mv /tmp/wordpress /var/www/$fname
  clear
  echo "######################################################"
- printf "Open url $dn in your browser and install wordpress. \n read file /root/$fname for database information to be use during installation\n"
+ printf "Open url $dn in your browser, site is ready. \n read file /root/$fname for database and wp information \n"
  printf " Need to setup another domain? please run vhostsetup command again! \n"
  echo "######################################################"
  cd
  rm -rf /tmp/mdbpassw /tmp/wordpress/ /tmp/latest.zip > /dev/null 2>&1
  chown -R www-data:www-data /var/www/$fname
- exit 0
+ sudo -u www-data  wp config create --dbname=$dbn --dbuser=$dbn --dbpass=$dpass
+ sudo -u www-data wp core install --url=$dn --title="Crazy Tech India sample" --admin_user=wpadmin --admin_password=$dpass --admin_email=vijay@mevijay.dev  --skip-email
+ echo "Checking Nginx configuration..."
+ nginx -t &> /dev/null
+ if [[ $? -eq 0 ]]; then
+   echo "Nginx configuration syntax is OK."
+   echo "Restarting Nginx..."
+   sudo systemctl restart nginx
+ else
+   echo "Error found in Nginx configuration syntax. Please review and fix any errors."
+ fi
+ echo " setting up lets encrypt ....."
+ certbot certonly --nginx -d $dn -d www.$dn  --agree-tos -m vijay@mevijay.dev
+  exit 0
 ;;
 
 x|X)exit;;
