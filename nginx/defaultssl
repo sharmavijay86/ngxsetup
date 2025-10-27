@@ -35,16 +35,7 @@ server {
 		#try_files /wp-content/cache/supercache/$http_host/$cache_uri/index.html $uri $uri/ /index.php?$args;
 	try_files $uri $uri/ /index.php?$args;
 	}
-	location /mysql {
-  	  alias /usr/share/phpmyadmin;
-	  location ~ \.php$ {
-          include fastcgi_params;
-          fastcgi_param SCRIPT_FILENAME $request_filename;
-          fastcgi_split_path_info ^(.+\.php)(/.+)$;
-          fastcgi_pass unix:/run/php/php7.4-fpm.sock;
-          fastcgi_index index.php;
-          }
-	}
+    include common/phpmyadmin.conf;
 	location ~ ^/xmlrpc.php {
      		deny all;
     	}
