@@ -76,12 +76,12 @@ sed -i '/idle_timeout/ s/^;pm*/pm/' /etc/php/$PVER/fpm/pool.d/www.conf
 sed -i '/max_requests/ s/^;pm*/pm/' /etc/php/$PVER/fpm/pool.d/www.conf
 sed -i '/max_requests/ s/500/5000/' /etc/php/$PVER/fpm/pool.d/www.conf
 
-wget -O /tmp/phpmyadmin.zip https://files.phpmyadmin.net/phpMyAdmin/5.2.0/phpMyAdmin-5.2.0-english.zip
+wget -O /tmp/phpmyadmin.zip https://files.phpmyadmin.net/phpMyAdmin/5.2.3/phpMyAdmin-5.2.3-english.zip
 cd /tmp
 unzip phpmyadmin.zip
-mv phpMyAdmin-5.2.0-english /usr/share/phpmyadmin
+mv phpMyAdmin-5.2.3-english /usr/share/phpmyadmin
 mkdir -p /var/www/html
-ln -s /usr/share/phpmyadmin /var/www/html/phpmyadmin
+chown -R www-data:www-data /usr/share/phpmyadmin
 rm -rf php*
 cd
 sed -i "s/ENABLED=\"false\"/ENABLED=\"true\"/g" /etc/default/sysstat
