@@ -1,24 +1,16 @@
-# Nginx setup on Ubuntu
-Installation script to compile nginx with tune up settings clone the script in /root/ dir run bash ngxsetup.sh Follow instruction ...
-## Securing php-fpm pool
+# ngxsetup (Go-only)
+
+Single-binary Ubuntu Nginx + MySQL/MariaDB + PHP setup.
+
+This repo is **Go-only**: legacy bash scripts have been removed. The Go binary embeds the required Nginx/config assets from this repo and applies the same setup logic via a CLI.
+
+## Install / usage
+
+See [INSTALL.md](INSTALL.md).
+
+Quick start on the server:
+
+```bash
+sudo ./ngxsetup-linux-amd64 setup
+vhostsetup
 ```
-cd /etc/php/7.4/fpm/pool.d
-cp www.conf web1.conf
-vim web1.conf
-# to change here
-[web1]
-user = web1
-group = web1
-listen = /run/php/php7.4-fpm-web1.sock
-```
-change nginx
-```
-vim /etc/nginx/sites-enabled/web1lan
-fastcgi_pass unix:/run/php/php7.4-fpm-web1.sock;
-```
-restrt
-```
-systemctl restart nginx
-systemctl restart php7.4-fpm
-```
-Done..

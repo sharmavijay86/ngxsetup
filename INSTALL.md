@@ -1,18 +1,18 @@
 # INSTALL / Usage (single-binary)
 
-This project ships as a **single static Linux binary** that embeds the original repo assets (`common/`, `conf.d/`, `nginx/`, `extra/`, `docs/`).
+This project ships as a **single static Linux binary** that embeds the required repo assets (`common/`, `conf.d/`, `nginx/`, `extra/`, `docs/`).
 
-The binary reproduces the behavior of the original bash scripts:
-- `ngxsetup.sh` → `ngxsetup setup`
-- `extra/vhostsetup` → `ngxsetup vhostsetup` (or `vhostsetup` symlink)
-- `extra/fixperm` → `ngxsetup fixperm` (or `fixperm` symlink)
-- `extra/loadcheck.sh` → `ngxsetup loadcheck` (or `loadcheck` symlink)
-- `extra/mysqltune.sh` → `ngxsetup mysqltune` (or `mysqltune` symlink)
-- `extra/mod-sec-install.sh` → `ngxsetup modsec-install` (or `modsec-install` symlink)
+The binary provides a Go CLI for the full setup workflow:
+- `setup`
+- `vhostsetup`
+- `fixperm`
+- `loadcheck`
+- `mysqltune`
+- `modsec-install`
 
 ## Safety / what this installer changes
 
-Running `setup` is **not** a “dry config generator” — it applies changes to the machine, similar to the bash script.
+Running `setup` is **not** a “dry config generator” — it applies changes to the machine.
 
 It will (high-level):
 - Install packages via `apt-get` (nginx, php-fpm, db server, fail2ban, sysstat, certbot, etc.)
@@ -104,7 +104,7 @@ ngxsetup --help
 ngxsetup help
 ```
 
-### Setup (port of `ngxsetup.sh`)
+### Setup
 
 ```bash
 ngxsetup setup [--db=mariadb|mysql] [--dry-run]
@@ -114,7 +114,7 @@ Flags:
 - `--db=`: `mariadb` (default) or `mysql`
 - `--dry-run`: prints the commands it would run
 
-### vhostsetup (port of `extra/vhostsetup`)
+### vhostsetup
 
 Interactive:
 
