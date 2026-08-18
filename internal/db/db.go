@@ -169,6 +169,44 @@ FLUSH PRIVILEGES;
 	return nil
 }
 
+// EnsureSchemaAndGrant recreates a database schema that has gone missing —
+// most commonly an accidental `DROP DATABASE`, as opposed to a dropped
+// table or deleted rows, which never leaves the schema itself absent — and
+// re-issues its grant to an account that already exists. Unlike Provision,
+// it never touches the account's password: the common case after a
+// database-only accident is that the user account survived untouched (both
+// MySQL and MariaDB leave granted privileges in mysql.db in place even
+// after the schema they were granted on disappears), so all that is
+// missing is the schema and possibly its grant row. Idempotent: both
+// CREATE DATABASE IF NOT EXISTS and GRANT are safe to repeat.
+func (c Client) EnsureSchemaAndGrant(ctx context.Context, dbName, user, host, collation string) error {
+	if err := ValidateIdentifier(dbName); err != nil {
+		return err
+	}
+	if err := ValidateIdentifier(user); err != nil {
+		return err
+	}
+	if host == "" {
+		host = "localhost"
+	}
+	charset := "utf8mb4"
+	if collation == "" {
+		collation = "utf8mb4_general_ci"
+	}
+
+	sql := fmt.Sprintf(`
+CREATE DATABASE IF NOT EXISTS %[1]s CHARACTER SET %[3]s COLLATE %[4]s;
+GRANT ALL PRIVILEGES ON %[1]s.* TO '%[2]s'@'%[5]s';
+FLUSH PRIVILEGES;
+`, dbName, user, charset, collation, host)
+
+	if err := c.Exec(ctx, sql); err != nil {
+		return fmt.Errorf("recreating database %s: %w", dbName, err)
+	}
+	logx.Change("recreated missing database %s and re-granted %s@%s", dbName, user, host)
+	return nil
+}
+
 // Drop removes a site's database and account.
 func (c Client) Drop(ctx context.Context, dbName, user, host string) error {
 	if err := ValidateIdentifier(dbName); err != nil {

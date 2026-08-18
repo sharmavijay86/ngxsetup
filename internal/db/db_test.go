@@ -111,3 +111,17 @@ func TestRestoreRejectsMissingOrEmptyFile(t *testing.T) {
 		t.Error("Restore accepted an empty file")
 	}
 }
+
+// EnsureSchemaAndGrant recreates a schema an accidental DROP DATABASE
+// removed; the identifiers it interpolates into SQL have to be validated
+// before anything reaches the database client, same as everywhere else in
+// this package.
+func TestEnsureSchemaAndGrantValidatesIdentifiers(t *testing.T) {
+	c := Client{}
+	if err := c.EnsureSchemaAndGrant(nil, "bad;name", "user", "localhost", ""); err == nil {
+		t.Error("EnsureSchemaAndGrant accepted an unsafe database name")
+	}
+	if err := c.EnsureSchemaAndGrant(nil, "ok_db", "bad'user", "localhost", ""); err == nil {
+		t.Error("EnsureSchemaAndGrant accepted an unsafe user name")
+	}
+}

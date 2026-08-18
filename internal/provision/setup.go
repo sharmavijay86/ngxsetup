@@ -37,6 +37,14 @@ var basePackages = []string{
 	// Live Stats is always part of the UI rather than a feature an operator
 	// turns on.
 	"libfcgi-bin",
+	// yara is a small, fast, no-daemon package — installing it costs a
+	// couple of seconds and a few megabytes, so it goes in unconditionally
+	// like the rest of this list. ClamAV does not: its database download
+	// alone can take minutes and its daemon holds several hundred MB of
+	// resident memory, real costs an operator who never runs a security
+	// scan should not pay just because `setup` ran — see
+	// Ctx.InstallClamAV for that one-click, opt-in install instead.
+	"yara",
 }
 
 // phpPackages are the extensions WordPress and its ecosystem actually require.

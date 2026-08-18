@@ -9,10 +9,14 @@ import (
 // operator (or the CLI's confirmation prompt) can see the whole picture
 // before anything is actually touched.
 type PatchPlan struct {
-	Domain     string
-	CoreUpdate string // target version, or "" if core is already current
-	Plugins    []wpItem
-	Themes     []wpItem
+	Domain string
+	// CoreCurrentVersion is WordPress's currently installed version,
+	// always populated — display context for CoreUpdate, which is only
+	// ever the target version.
+	CoreCurrentVersion string
+	CoreUpdate         string // target version, or "" if core is already current
+	Plugins            []wpItem
+	Themes             []wpItem
 }
 
 // Empty reports whether there is nothing to patch.
@@ -37,12 +41,53 @@ func (p PatchPlan) Describe() []string {
 	return lines
 }
 
+// Select builds a new plan containing only the chosen items — the
+// operator's checkbox selection in the web UI, or a scripted subset from
+// the CLI — so ApplyPatch only ever touches what was actually approved,
+// not everything PlanPatch happened to find outdated. Names not present in
+// the original plan are silently ignored rather than erroring: the plan
+// this is filtering came from the same wp-cli query moments earlier, so a
+// name that no longer matches almost always means the operator's browser
+// tab was open a while and something changed underneath it, not a typo
+// worth failing the whole patch over.
+func (p PatchPlan) Select(core bool, pluginNames, themeNames []string) PatchPlan {
+	out := PatchPlan{Domain: p.Domain, CoreCurrentVersion: p.CoreCurrentVersion}
+	if core {
+		out.CoreUpdate = p.CoreUpdate
+	}
+	want := func(names []string) map[string]bool {
+		m := make(map[string]bool, len(names))
+		for _, n := range names {
+			m[n] = true
+		}
+		return m
+	}
+	wantPlugins, wantThemes := want(pluginNames), want(themeNames)
+	for _, pl := range p.Plugins {
+		if wantPlugins[pl.Name] {
+			out.Plugins = append(out.Plugins, pl)
+		}
+	}
+	for _, th := range p.Themes {
+		if wantThemes[th.Name] {
+			out.Themes = append(out.Themes, th)
+		}
+	}
+	return out
+}
+
 // PlanPatch gathers what is outdated without changing anything.
 func (w WPCLI) PlanPatch(ctx context.Context, domain string) (*PatchPlan, error) {
 	if !w.Available() {
 		return nil, fmt.Errorf("wp-cli is not installed")
 	}
 	plan := &PatchPlan{Domain: domain}
+
+	current, err := w.CoreVersion(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("reading the installed core version: %w", err)
+	}
+	plan.CoreCurrentVersion = current
 
 	core, err := w.CoreUpdateAvailable(ctx)
 	if err != nil {

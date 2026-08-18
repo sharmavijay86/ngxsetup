@@ -668,7 +668,7 @@ func cmdDBRestore(ctx context.Context, args []string) error {
 
 func cmdSecurity(ctx context.Context, args []string) error {
 	if len(args) == 0 {
-		return fmt.Errorf("usage: ngxsetup security <scan|patch> [domain]")
+		return fmt.Errorf("usage: ngxsetup security <scan|patch|install-clamav> [domain]")
 	}
 	sub, rest := args[0], args[1:]
 	switch sub {
@@ -676,9 +676,28 @@ func cmdSecurity(ctx context.Context, args []string) error {
 		return cmdSecurityScan(ctx, rest)
 	case "patch":
 		return cmdSecurityPatch(ctx, rest)
+	case "install-clamav":
+		return cmdSecurityInstallClamAV(ctx, rest)
 	default:
 		return fmt.Errorf("unknown security subcommand %q", sub)
 	}
+}
+
+// cmdSecurityInstallClamAV is the one-click alternative to an operator
+// running `apt install clamav` themselves after a scan reports it missing.
+func cmdSecurityInstallClamAV(ctx context.Context, args []string) error {
+	fs := newFlagSet("security install-clamav")
+	var g globalOpts
+	g.register(fs)
+	if _, err := parseArgs(fs, args); err != nil {
+		return err
+	}
+	g.applyLogging()
+	c, err := provision.New(ctx, g.provisionOptions())
+	if err != nil {
+		return err
+	}
+	return c.InstallClamAV()
 }
 
 // securityTargets resolves the site (or every site) a security command

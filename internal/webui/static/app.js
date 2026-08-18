@@ -472,6 +472,209 @@ function renderSitesTable(tbody, sites) {
   });
 }
 
+// ---- Site migration ---------------------------------------------------------
+
+views.migrate = (container) => {
+  container.innerHTML = `
+    <h2 class="page-title">${icon('fa-right-left', 'text-indigo-500')}Site Migration</h2>
+    <div class="card">
+      <h3 class="card-title">${icon('fa-server')}Connect to a remote server</h3>
+      <p class="text-xs text-slate-500 mb-3">Reads /etc/nginx/sites-enabled and each vhost's wp-config.php over SSH. Nothing on the remote server is changed by this step — nothing here is migrated until you select sites below and start the migration.</p>
+      <form id="migrate-connect-form">
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div class="md:col-span-2"><label class="field-label">Host</label>
+            <input type="text" name="host" placeholder="203.0.113.10 or old-server.example.com" required class="field-input"></div>
+          <div><label class="field-label">Port</label><input type="number" name="port" value="22" min="1" max="65535" class="field-input"></div>
+        </div>
+        <div class="mt-3"><label class="field-label">SSH user</label>
+          <input type="text" name="user" value="root" required class="field-input max-w-sm">
+          <p class="text-xs text-slate-400 mt-1">A non-root user needs passwordless (NOPASSWD) sudo on the remote host.</p>
+        </div>
+        <div class="mt-3"><label class="field-label">Private key</label>
+          <textarea name="private_key" rows="6" required class="field-input font-mono text-xs" placeholder="-----BEGIN OPENSSH PRIVATE KEY-----&#10;...&#10;-----END OPENSSH PRIVATE KEY-----"></textarea>
+          <p class="text-xs text-slate-400 mt-1">Used only for this session and never written anywhere but a temporary, mode-0600 file removed as soon as this migration finishes.</p>
+        </div>
+        <button type="submit" class="btn btn-primary mt-3">${icon('fa-plug')}Connect &amp; discover sites</button>
+      </form>
+      <div class="output-wrap hidden mt-3"><div class="output-panel"></div></div>
+    </div>
+    <div id="migrate-sites-card"></div>
+    <div id="migrate-progress-card"></div>`;
+
+  const connectForm = container.querySelector('#migrate-connect-form');
+  connectForm.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const fd = new FormData(connectForm);
+    const body = {
+      host: fd.get('host').trim(), port: parseInt(fd.get('port'), 10) || 22,
+      user: fd.get('user').trim(), private_key: fd.get('private_key'),
+    };
+    const outWrap = connectForm.closest('.card').querySelector('.output-wrap');
+    const out = outWrap.querySelector('.output-panel');
+    outWrap.classList.remove('hidden'); out.classList.remove('err');
+    out.textContent = 'Connecting — this can take a few seconds, longer if the connection needs to retry…';
+    const btn = connectForm.querySelector('button[type=submit]');
+    btn.disabled = true;
+    try {
+      const result = await api('POST', '/api/migrate/discover', body);
+      out.textContent = `Found ${result.sites.length} vhost(s).`;
+      renderMigrateSites(container.querySelector('#migrate-sites-card'), result.sites);
+    } catch (err) {
+      out.classList.add('err');
+      out.textContent = 'Error: ' + err.message;
+      toast('Discovery failed: ' + err.message, 'err');
+    } finally { btn.disabled = false; }
+  });
+
+  let stopped = false;
+  pollMigrateStatus(container.querySelector('#migrate-progress-card'), () => stopped);
+  return () => { stopped = true; };
+};
+
+function renderMigrateSites(container, sites) {
+  if (!sites || !sites.length) {
+    container.innerHTML = `<div class="card"><p class="text-slate-400 text-sm">No vhosts found on that server's /etc/nginx/sites-enabled.</p></div>`;
+    return;
+  }
+  container.innerHTML = `
+    <div class="card">
+      <h3 class="card-title">${icon('fa-list-check')}Discovered sites</h3>
+      <div class="overflow-x-auto">
+      <table class="data-table">
+        <thead><tr><th></th><th>Domain</th><th>Document root</th><th>Database</th><th>Status</th></tr></thead>
+        <tbody>
+          ${sites.map((s) => `<tr data-domain="${escapeHTML(s.domain)}">
+            <td><input type="checkbox" class="migrate-site-check" ${s.migratable ? '' : 'disabled'}></td>
+            <td class="font-medium text-slate-900">${escapeHTML(s.domain)}
+              ${s.aliases && s.aliases.length ? `<div class="text-xs text-slate-400 font-normal">${s.aliases.map(escapeHTML).join(', ')}</div>` : ''}</td>
+            <td class="font-mono text-xs">${escapeHTML(s.root || '-')}</td>
+            <td class="font-mono text-xs">${s.db_name ? escapeHTML(s.db_name) : '-'}${s.db_user ? ` <span class="text-slate-400">(${escapeHTML(s.db_user)})</span>` : ''}</td>
+            <td>${s.migratable
+              ? `<span class="badge badge-ok">ready</span>`
+              : `<span class="badge badge-off" title="${escapeHTML(s.reason)}">${escapeHTML(s.reason)}</span>`}</td>
+          </tr>`).join('')}
+        </tbody>
+      </table>
+      </div>
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4 max-w-lg">
+        <div><label class="field-label">Certificate</label>
+          <select id="migrate-tls" class="field-input">
+            <option value="none">None (plain HTTP)</option>
+            <option value="self">Self-signed</option>
+            <option value="letsencrypt">Let's Encrypt (DNS must point here first)</option>
+          </select>
+        </div>
+      </div>
+      <div class="flex items-center justify-between mt-4">
+        <button id="migrate-select-all" class="btn btn-sm">Select all ready sites</button>
+        <button id="migrate-start" class="btn btn-primary">${icon('fa-right-left')}Migrate selected</button>
+      </div>
+    </div>`;
+
+  container.querySelector('#migrate-select-all').addEventListener('click', () => {
+    container.querySelectorAll('.migrate-site-check:not(:disabled)').forEach((cb) => { cb.checked = true; });
+  });
+
+  container.querySelector('#migrate-start').addEventListener('click', async () => {
+    const domains = Array.from(container.querySelectorAll('.migrate-site-check:checked')).map((cb) => cb.closest('tr').dataset.domain);
+    if (!domains.length) { toast('Select at least one site to migrate', 'err'); return; }
+    const tlsMode = container.querySelector('#migrate-tls').value;
+    const res = await confirmModal({
+      title: `Migrate ${domains.length} site${domains.length === 1 ? '' : 's'}`,
+      body: `<p>This creates a new site here for each domain below, restores its database and copies its files over. A site that fails partway is fully rolled back — nothing half-migrated is left registered.</p>
+        <ul class="list-disc list-inside text-sm mt-2">${domains.map((d) => `<li>${escapeHTML(d)}</li>`).join('')}</ul>`,
+      confirmLabel: 'Start migration',
+    });
+    if (!res) return;
+    const btn = container.querySelector('#migrate-start');
+    btn.disabled = true;
+    try {
+      await api('POST', '/api/migrate/start', { domains, tls: tlsMode === 'letsencrypt', self_signed: tlsMode === 'self' });
+      toast('Migration started', 'ok');
+      pollMigrateStatus(document.getElementById('migrate-progress-card'), () => false);
+    } catch (err) {
+      toast('Could not start migration: ' + err.message, 'err');
+      btn.disabled = false;
+    }
+  });
+}
+
+function migrateStateBadge(state) {
+  switch (state) {
+    case 'success': return 'badge-ok';
+    case 'failed': return 'badge-fail';
+    case 'running': return 'badge-warn';
+    default: return 'badge-off';
+  }
+}
+function migrateBarColor(state) {
+  switch (state) {
+    case 'success': return 'bg-emerald-500';
+    case 'failed': return 'bg-rose-500';
+    default: return 'bg-indigo-500';
+  }
+}
+
+function renderMigrateProgress(container, status) {
+  if (!container) return;
+  if (!status || (!status.running && (!status.sites || !status.sites.length))) {
+    container.innerHTML = '';
+    return;
+  }
+  container.innerHTML = `
+    <div class="card">
+      <div class="flex items-center justify-between mb-3">
+        <h3 class="card-title mb-0">${icon('fa-spinner', status.running ? 'fa-spin' : '')}Migration progress</h3>
+        ${status.running ? `<button id="migrate-cancel" class="btn btn-sm btn-danger">${icon('fa-stop')}Cancel</button>` : ''}
+      </div>
+      <div class="space-y-3">
+        ${(status.sites || []).map((s) => `
+          <div>
+            <div class="flex items-center justify-between text-sm mb-1">
+              <span class="font-medium text-slate-900">${escapeHTML(s.domain)}</span>
+              <span class="badge ${migrateStateBadge(s.state)}">${escapeHTML(s.state)}</span>
+            </div>
+            <div class="text-xs text-slate-500 mb-1">${escapeHTML(s.step || '')}${s.error ? ` — ${escapeHTML(s.error)}` : ''}</div>
+            <div class="w-full bg-slate-200 rounded-full h-2 overflow-hidden">
+              <div class="h-2 rounded-full ${migrateBarColor(s.state)}" style="width:${s.percent || 0}%"></div>
+            </div>
+          </div>`).join('')}
+      </div>
+      <h4 class="text-xs font-semibold text-slate-500 uppercase tracking-wide mt-4 mb-2">Log</h4>
+      <div class="log-panel max-h-64" id="migrate-log">${(status.log || []).map(escapeHTML).join('\n')}</div>
+    </div>`;
+  const log = container.querySelector('#migrate-log');
+  if (log) log.scrollTop = log.scrollHeight;
+  const cancelBtn = container.querySelector('#migrate-cancel');
+  if (cancelBtn) cancelBtn.addEventListener('click', async () => {
+    cancelBtn.disabled = true;
+    try { await api('POST', '/api/migrate/cancel', {}); toast('Cancelling…', 'ok'); } catch (err) { toast(err.message, 'err'); }
+  });
+}
+
+// pollMigrateStatus polls /api/migrate/status every couple of seconds for
+// as long as a job is running (or, called once from view setup, just to
+// show whatever the last job left behind — e.g. the operator navigated
+// away mid-migration and came back). isStopped lets the view's own cleanup
+// end the loop when the operator leaves this page while a poll is still
+// scheduled.
+function pollMigrateStatus(container, isStopped) {
+  if (!container) return;
+  async function tick() {
+    if (isStopped()) return;
+    try {
+      const status = await api('GET', '/api/migrate/status');
+      if (isStopped()) return;
+      renderMigrateProgress(container, status);
+      if (status.running) setTimeout(tick, 2000);
+    } catch {
+      // A transient poll failure is not worth surfacing as a toast on top
+      // of whatever the log panel already shows; just stop this loop.
+    }
+  }
+  tick();
+}
+
 // ---- Site activity detail ----------------------------------------------------
 
 views.siteDetail = (container, domain) => {
@@ -943,11 +1146,121 @@ views.security = async (container) => {
     run: () => api('POST', '/api/security/scan', { domain: target() }),
   });
   actionPanel(panels, {
-    title: 'Patch outdated core, plugins and themes', iconName: 'fa-arrows-rotate', buttonLabel: 'Patch now', buttonClass: 'btn-danger',
-    confirmOpts: { title: 'Patch WordPress', body: '<p>This updates core, plugins and themes on the selected target. Consider taking a database backup first.</p>', confirmLabel: 'Patch' },
-    run: () => api('POST', '/api/security/patch', { domain: target() }),
+    title: 'Install ClamAV (antivirus engine used by the scan above)', iconName: 'fa-download', buttonLabel: 'Install ClamAV',
+    run: () => api('POST', '/api/security/install-clamav', {}),
   });
+
+  renderPatchPanel(panels, target);
 };
+
+// renderPatchPanel replaces a single blind "Patch now" button with a
+// review step: load exactly what is outdated for one site — current and
+// latest version for core, every plugin, every theme — let the operator
+// check only what they actually want updated, then patch just that
+// selection. Only ever operates on one specific site at a time (plugin and
+// theme lists are meaningless averaged across many sites), so it is
+// disabled while "All WordPress sites" is selected above.
+function renderPatchPanel(container, target) {
+  const card = document.createElement('div');
+  card.className = 'card';
+  card.innerHTML = `
+    <div class="flex items-center justify-between mb-3">
+      <h3 class="card-title mb-0">${icon('fa-arrows-rotate')}Outdated core, plugins &amp; themes</h3>
+      <button id="sec-load-plan" class="btn btn-primary">${icon('fa-magnifying-glass')}Check for updates</button>
+    </div>
+    <div id="sec-plan-body" class="text-sm text-slate-400">Select a specific site above, then click "Check for updates."</div>
+    <div class="output-wrap hidden mt-3"><div class="output-panel"></div></div>`;
+  container.appendChild(card);
+
+  const body = card.querySelector('#sec-plan-body');
+  const outWrap = card.querySelector('.output-wrap');
+  const out = outWrap.querySelector('.output-panel');
+
+  card.querySelector('#sec-load-plan').addEventListener('click', async () => {
+    const domain = target();
+    if (!domain) { toast('Choose a specific site above — plugin and theme updates are per-site', 'err'); return; }
+    body.innerHTML = '<p class="text-slate-400 text-sm">Checking wp-cli for outdated core, plugins and themes…</p>';
+    outWrap.classList.add('hidden');
+    try {
+      const plan = await api('GET', `/api/security/patch-plan?domain=${encodeURIComponent(domain)}`);
+      renderPatchPlan(body, domain, plan, outWrap, out);
+    } catch (err) {
+      body.innerHTML = `<p class="text-rose-600 text-sm">${escapeHTML(err.message)}</p>`;
+    }
+  });
+}
+
+function renderPatchPlan(body, domain, plan, outWrap, out) {
+  const hasCore = !!plan.core_latest;
+  const plugins = plan.plugins || [];
+  const themes = plan.themes || [];
+  if (!hasCore && !plugins.length && !themes.length) {
+    body.innerHTML = `<p class="text-sm text-emerald-700"><i class="fa-solid fa-circle-check mr-1"></i>${escapeHTML(domain)} is already up to date.</p>`;
+    return;
+  }
+
+  const row = (type, name, title, current, latest, cls) => `
+    <tr>
+      <td><input type="checkbox" class="${cls}" data-name="${escapeHTML(name)}" checked></td>
+      <td>${escapeHTML(type)}</td>
+      <td class="font-medium text-slate-900">${escapeHTML(title || name)}</td>
+      <td class="font-mono text-xs">${escapeHTML(current || '-')}</td>
+      <td class="font-mono text-xs text-indigo-600">${escapeHTML(latest || '-')}</td>
+    </tr>`;
+
+  body.innerHTML = `
+    <div class="overflow-x-auto">
+    <table class="data-table">
+      <thead><tr><th></th><th>Type</th><th>Name</th><th>Current</th><th>Latest</th></tr></thead>
+      <tbody>
+        ${hasCore ? row('Core', 'core', 'WordPress core', plan.core_current, plan.core_latest, 'sec-item-core') : ''}
+        ${plugins.map((p) => row('Plugin', p.name, p.title, p.version, p.update_version, 'sec-item-plugin')).join('')}
+        ${themes.map((t) => row('Theme', t.name, t.title, t.version, t.update_version, 'sec-item-theme')).join('')}
+      </tbody>
+    </table>
+    </div>
+    <div class="flex items-center justify-between mt-4">
+      <button id="sec-select-all" class="btn btn-sm">Select all</button>
+      <button id="sec-patch-selected" class="btn btn-danger-solid">${icon('fa-arrows-rotate')}Patch selected</button>
+    </div>`;
+
+  const allChecks = () => body.querySelectorAll('.sec-item-core, .sec-item-plugin, .sec-item-theme');
+  body.querySelector('#sec-select-all').addEventListener('click', () => {
+    allChecks().forEach((cb) => { cb.checked = true; });
+  });
+
+  body.querySelector('#sec-patch-selected').addEventListener('click', async () => {
+    const core = !!body.querySelector('.sec-item-core:checked');
+    const selPlugins = Array.from(body.querySelectorAll('.sec-item-plugin:checked')).map((cb) => cb.dataset.name);
+    const selThemes = Array.from(body.querySelectorAll('.sec-item-theme:checked')).map((cb) => cb.dataset.name);
+    if (!core && !selPlugins.length && !selThemes.length) { toast('Select at least one item to patch', 'err'); return; }
+
+    const items = [];
+    if (core) items.push(`WordPress core -> ${plan.core_latest}`);
+    selPlugins.forEach((n) => items.push(`plugin ${n}`));
+    selThemes.forEach((n) => items.push(`theme ${n}`));
+    const res = await confirmModal({
+      title: `Patch ${domain}`,
+      body: `<p>This updates the selected items only. Consider taking a database backup first.</p>
+        <ul class="list-disc list-inside text-sm mt-2">${items.map((i) => `<li>${escapeHTML(i)}</li>`).join('')}</ul>`,
+      confirmLabel: 'Patch selected', danger: true,
+    });
+    if (!res) return;
+
+    const btn = body.querySelector('#sec-patch-selected');
+    btn.disabled = true;
+    outWrap.classList.remove('hidden'); out.classList.remove('err'); out.textContent = 'Working…';
+    try {
+      const result = await api('POST', '/api/security/patch', { domain, core, plugins: selPlugins, themes: selThemes });
+      out.textContent = result.output || '(no output)';
+      toast('Patch complete', 'ok');
+    } catch (err) {
+      out.classList.add('err');
+      out.textContent = ((err.data && err.data.output) ? err.data.output + '\n\n' : '') + 'Error: ' + err.message;
+      toast('Patch failed: ' + err.message, 'err');
+    } finally { btn.disabled = false; }
+  });
+}
 
 // ---- Backups --------------------------------------------------------------------
 

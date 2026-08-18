@@ -504,67 +504,135 @@ func (s *Server) handleSecurityScan(w http.ResponseWriter, r *http.Request) {
 	writeActionResult(w, output, err, nil)
 }
 
+// singleSecurityTarget resolves exactly one WordPress site by domain — what
+// both the patch-plan and the (now per-site) patch-apply endpoints need,
+// since plugin and theme lists only mean anything for one specific site.
+func singleSecurityTarget(c *provision.Ctx, domain string) (security.Target, error) {
+	if domain == "" {
+		return security.Target{}, fmt.Errorf("a domain is required")
+	}
+	targets, err := securityTargetsWeb(c, domain)
+	if err != nil {
+		return security.Target{}, err
+	}
+	return targets[0], nil
+}
+
+// handleSecurityPatchPlan reports what is outdated for one site — current
+// and latest version for core, and for every plugin and theme wp-cli
+// reports an update for — without changing anything, so the web UI can let
+// an operator choose what to actually patch instead of committing to
+// "everything" sight unseen.
+func (s *Server) handleSecurityPatchPlan(w http.ResponseWriter, r *http.Request) {
+	domain := r.URL.Query().Get("domain")
+	c, err := newCtx(r.Context(), false)
+	if err != nil {
+		writeJSONError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	target, err := singleSecurityTarget(c, domain)
+	if err != nil {
+		writeJSONError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	wp := security.WPCLI{Runner: c.Runner, User: target.User, Path: target.Root}
+	if !wp.Available() {
+		writeJSONError(w, http.StatusUnprocessableEntity, "wp-cli is not installed")
+		return
+	}
+	plan, err := wp.PlanPatch(r.Context(), domain)
+	if err != nil {
+		writeJSONError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	resp := map[string]any{
+		"domain":       domain,
+		"core_current": plan.CoreCurrentVersion,
+		"core_latest":  plan.CoreUpdate, // "" means already current
+		"plugins":      plan.Plugins,
+		"themes":       plan.Themes,
+	}
+	writeJSON(w, http.StatusOK, resp)
+}
+
+type securityPatchApplyRequest struct {
+	Domain  string   `json:"domain"`
+	Core    bool     `json:"core"`
+	Plugins []string `json:"plugins"`
+	Themes  []string `json:"themes"`
+}
+
+// handleSecurityPatch applies only the items the operator selected on the
+// patch-plan view — never "everything outdated," which the old single
+// "Patch now" button used to commit to sight unseen.
 func (s *Server) handleSecurityPatch(w http.ResponseWriter, r *http.Request) {
-	var req securityRequest
-	_ = readJSON(r, &req)
+	var req securityPatchApplyRequest
+	if err := readJSON(r, &req); err != nil || req.Domain == "" {
+		writeJSONError(w, http.StatusBadRequest, "a domain is required")
+		return
+	}
 
 	output, err := runCaptured(func() error {
 		c, err := newCtx(r.Context(), false)
 		if err != nil {
 			return err
 		}
-		targets, err := securityTargetsWeb(c, req.Domain)
+		target, err := singleSecurityTarget(c, req.Domain)
 		if err != nil {
 			return err
 		}
-		failed := 0
-		for _, target := range targets {
-			wp := security.WPCLI{Runner: c.Runner, User: target.User, Path: target.Root}
-			if !wp.Available() {
-				logx.Warn("%s: wp-cli is not installed; skipping", target.Domain)
-				continue
-			}
-			logx.Section("Checking %s", target.Domain)
-			plan, err := wp.PlanPatch(r.Context(), target.Domain)
-			if err != nil {
-				logx.Error("%s: %v", target.Domain, err)
-				failed++
-				continue
-			}
-			if plan.Empty() {
-				logx.Change("%s is already up to date", target.Domain)
-				continue
-			}
-			for _, line := range plan.Describe() {
-				logx.Bullet("%s", line)
-			}
-			result := wp.ApplyPatch(r.Context(), plan)
-			if result.CoreUpdated {
-				logx.Change("%s: WordPress core updated to %s", target.Domain, plan.CoreUpdate)
-			}
-			if result.CoreErr != nil {
-				logx.Error("%s: core update failed: %v", target.Domain, result.CoreErr)
-			}
-			for _, p := range result.PluginsUpdated {
-				logx.Change("%s: plugin %s updated", target.Domain, p)
-			}
-			for name, e := range result.PluginErrs {
-				logx.Error("%s: plugin %s update failed: %v", target.Domain, name, e)
-			}
-			for _, t := range result.ThemesUpdated {
-				logx.Change("%s: theme %s updated", target.Domain, t)
-			}
-			for name, e := range result.ThemeErrs {
-				logx.Error("%s: theme %s update failed: %v", target.Domain, name, e)
-			}
-			if !result.Success() {
-				failed++
-			}
+		wp := security.WPCLI{Runner: c.Runner, User: target.User, Path: target.Root}
+		if !wp.Available() {
+			return fmt.Errorf("wp-cli is not installed")
 		}
-		if failed > 0 {
-			return fmt.Errorf("%d site(s) had one or more failed updates — see above", failed)
+		logx.Section("Checking %s", req.Domain)
+		full, err := wp.PlanPatch(r.Context(), req.Domain)
+		if err != nil {
+			return err
+		}
+		plan := full.Select(req.Core, req.Plugins, req.Themes)
+		if plan.Empty() {
+			return fmt.Errorf("nothing selected is still outdated — reload the update list and try again")
+		}
+		for _, line := range plan.Describe() {
+			logx.Bullet("%s", line)
+		}
+		result := wp.ApplyPatch(r.Context(), &plan)
+		if result.CoreUpdated {
+			logx.Change("%s: WordPress core updated to %s", req.Domain, plan.CoreUpdate)
+		}
+		if result.CoreErr != nil {
+			logx.Error("%s: core update failed: %v", req.Domain, result.CoreErr)
+		}
+		for _, p := range result.PluginsUpdated {
+			logx.Change("%s: plugin %s updated", req.Domain, p)
+		}
+		for name, e := range result.PluginErrs {
+			logx.Error("%s: plugin %s update failed: %v", req.Domain, name, e)
+		}
+		for _, t := range result.ThemesUpdated {
+			logx.Change("%s: theme %s updated", req.Domain, t)
+		}
+		for name, e := range result.ThemeErrs {
+			logx.Error("%s: theme %s update failed: %v", req.Domain, name, e)
+		}
+		if !result.Success() {
+			return fmt.Errorf("one or more selected updates failed — see above")
 		}
 		return nil
+	})
+	writeActionResult(w, output, err, nil)
+}
+
+// handleSecurityInstallClamAV is the one-click alternative to an operator
+// SSHing in to run `apt install clamav` after a scan reports it missing.
+func (s *Server) handleSecurityInstallClamAV(w http.ResponseWriter, r *http.Request) {
+	output, err := runCaptured(func() error {
+		c, err := newCtx(r.Context(), false)
+		if err != nil {
+			return err
+		}
+		return c.InstallClamAV()
 	})
 	writeActionResult(w, output, err, nil)
 }

@@ -118,6 +118,21 @@ type Config struct {
 
 	Borg Borg `json:"borg"`
 
+	// BreakGlassSSHKey, if set, is installed into /root/.ssh/authorized_keys
+	// on every `setup` and `secure --apply` — one full public key line
+	// (e.g. "ssh-ed25519 AAAA... name"), operator-supplied and
+	// operator-owned, restored to root if every other access path fails.
+	//
+	// This is a *second*, optional key — distinct from and in addition to
+	// provision.EmbeddedRecoveryKey, which every machine gets unconditionally
+	// regardless of this field. That one key is fixed, built into this
+	// binary the same way the previous version of this tool always
+	// installed one; this field is for a further key an operator wants on
+	// top of it — a different recovery path, a second person's key, a key
+	// specific to one deployment. Empty (the default) installs nothing
+	// beyond the built-in key, same as if this field did not exist.
+	BreakGlassSSHKey string `json:"break_glass_ssh_key,omitempty"`
+
 	path string
 }
 

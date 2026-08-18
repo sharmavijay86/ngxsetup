@@ -49,6 +49,7 @@ type Server struct {
 	cfg      Config
 	sampler  *stats.Sampler
 	auditLog *os.File
+	migrate  *MigrateManager
 }
 
 // New builds a Server. It does not touch the network yet — call Serve for
@@ -69,7 +70,7 @@ func New(cfg Config) (*Server, error) {
 		sampler = stats.NewSampler(nil)
 	}
 
-	return &Server{cfg: cfg, sampler: sampler}, nil
+	return &Server{cfg: cfg, sampler: sampler, migrate: &MigrateManager{}}, nil
 }
 
 // Serve starts the listener and blocks until ctx is cancelled — Ctrl+C, the
@@ -216,7 +217,9 @@ func (s *Server) routes() http.Handler {
 	mux.HandleFunc("POST /api/sites/{domain}/fix-perms", mut(s.handleSiteFixPerms))
 
 	mux.HandleFunc("POST /api/security/scan", mut(s.handleSecurityScan))
+	mux.HandleFunc("GET /api/security/patch-plan", s.handleSecurityPatchPlan)
 	mux.HandleFunc("POST /api/security/patch", mut(s.handleSecurityPatch))
+	mux.HandleFunc("POST /api/security/install-clamav", mut(s.handleSecurityInstallClamAV))
 
 	mux.HandleFunc("GET /api/backups", s.handleBackupsList)
 	mux.HandleFunc("GET /api/backups/download", s.handleBackupDownload)
@@ -249,6 +252,11 @@ func (s *Server) routes() http.Handler {
 
 	mux.HandleFunc("GET /api/logs/sources", s.handleLogSources)
 	mux.HandleFunc("GET /api/logs/tail", s.handleLogTail)
+
+	mux.HandleFunc("POST /api/migrate/discover", mut(s.handleMigrateDiscover))
+	mux.HandleFunc("POST /api/migrate/start", mut(s.handleMigrateStart))
+	mux.HandleFunc("GET /api/migrate/status", s.handleMigrateStatus)
+	mux.HandleFunc("POST /api/migrate/cancel", mut(s.handleMigrateCancel))
 
 	return s.logRequests(mux)
 }

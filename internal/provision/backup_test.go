@@ -22,6 +22,43 @@ func TestBackupDatabasePlainVhostHasNoDatabase(t *testing.T) {
 	}
 }
 
+// EnsureSiteDatabase must not touch the database at all for a plain vhost —
+// there is no schema to check for, let alone recreate.
+func TestEnsureSiteDatabasePlainVhostIsNoOp(t *testing.T) {
+	c := testCtx(t)
+	site := state.Site{Slug: "plain-com", Domain: "plain.com"} // no DBName
+	if err := c.EnsureSiteDatabase(site); err != nil {
+		t.Errorf("EnsureSiteDatabase on a plain vhost should be a no-op, got: %v", err)
+	}
+}
+
+// RestoreDatabase's early guards (unknown site, plain vhost, missing dump
+// file) must all fire before anything reaches EnsureSiteDatabase or the
+// database client — same ordering RestoreDatabase already documented for
+// the safety backup.
+func TestRestoreDatabaseUnknownSite(t *testing.T) {
+	c := testCtx(t)
+	if _, err := c.RestoreDatabase("does-not-exist.com", "/no/such/file.sql", true); err == nil {
+		t.Error("expected an error for an unregistered site")
+	}
+}
+
+func TestRestoreDatabasePlainVhostHasNoDatabase(t *testing.T) {
+	c := testCtx(t)
+	c.State.Upsert(state.Site{Slug: "plain-com", Domain: "plain.com"})
+	if _, err := c.RestoreDatabase("plain.com", "/no/such/file.sql", true); err == nil {
+		t.Error("expected an error restoring into a site with no database")
+	}
+}
+
+func TestRestoreDatabaseRejectsMissingDumpFile(t *testing.T) {
+	c := testCtx(t)
+	c.State.Upsert(state.Site{Slug: "wp-com", Domain: "wp.com", DBName: "wp_db", DBUser: "wp_user"})
+	if _, err := c.RestoreDatabase("wp.com", "/no/such/dump-file-really-not-there.sql", true); err == nil {
+		t.Error("expected an error for a dump file that does not exist")
+	}
+}
+
 // dry-run must report what it would do without actually shelling out to
 // mysqldump — Dump() has no dry-run awareness of its own (it always
 // executes, being a real read against the database), so the guard has to

@@ -447,7 +447,17 @@ func (c *Ctx) RemoveSite(nameOrSlug string, purgeFiles, purgeDB bool) error {
 	if err != nil {
 		return err
 	}
-	logx.Section("Removing %s", rec.Domain)
+	// Captured now, not read from rec again after State.Delete: Find
+	// returns a pointer into State.Sites, and Delete removes an element by
+	// shifting everything after it backward in the same backing array —
+	// confirmed live, that shift left rec pointing at whatever site had
+	// been immediately after this one, so a late "removed %s" reported
+	// that site's domain instead of the one actually just removed. The
+	// removal itself was never affected — Delete is called with rec.Slug
+	// evaluated before the shift — only this diagnostic ever read stale
+	// data.
+	domain := rec.Domain
+	logx.Section("Removing %s", domain)
 
 	if err := c.Writer.Remove(filepath.Join(SitesEnabled, rec.Slug+".conf")); err != nil {
 		return err
@@ -511,7 +521,7 @@ func (c *Ctx) RemoveSite(nameOrSlug string, purgeFiles, purgeDB bool) error {
 			return err
 		}
 	}
-	logx.Change("removed %s", rec.Domain)
+	logx.Change("removed %s", domain)
 	return nil
 }
 

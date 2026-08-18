@@ -134,6 +134,37 @@ func TestApplyPatchEmptyPlanDoesNothing(t *testing.T) {
 	}
 }
 
+func TestPatchPlanSelectFiltersToChosenItems(t *testing.T) {
+	full := PatchPlan{
+		Domain: "example.com", CoreCurrentVersion: "6.7", CoreUpdate: "6.7.1",
+		Plugins: []wpItem{{Name: "akismet"}, {Name: "jetpack"}},
+		Themes:  []wpItem{{Name: "twentytwentyfive"}, {Name: "storefront"}},
+	}
+
+	selected := full.Select(true, []string{"jetpack"}, nil)
+	if selected.CoreUpdate != "6.7.1" {
+		t.Errorf("core = %q, want it included when core=true", selected.CoreUpdate)
+	}
+	if len(selected.Plugins) != 1 || selected.Plugins[0].Name != "jetpack" {
+		t.Errorf("plugins = %+v, want exactly [jetpack]", selected.Plugins)
+	}
+	if len(selected.Themes) != 0 {
+		t.Errorf("themes = %+v, want none selected", selected.Themes)
+	}
+
+	noneSelected := full.Select(false, nil, nil)
+	if !noneSelected.Empty() {
+		t.Errorf("selecting nothing must produce an empty plan, got %+v", noneSelected)
+	}
+
+	// A name the current plan does not contain (stale browser tab,
+	// something changed underneath it) is silently dropped, not an error.
+	stale := full.Select(false, []string{"does-not-exist"}, nil)
+	if len(stale.Plugins) != 0 {
+		t.Errorf("an unknown plugin name leaked into the filtered plan: %+v", stale.Plugins)
+	}
+}
+
 type recordingRunner struct{ fn func([]string) }
 
 func (r recordingRunner) Look(string) bool { return true }

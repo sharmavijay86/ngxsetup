@@ -120,6 +120,8 @@ func Run(args []string) int {
 		err = cmdDB(ctx, rest)
 	case "borg":
 		err = cmdBorg(ctx, rest)
+	case "migrate":
+		err = cmdMigrate(ctx, rest)
 	case "uninstall":
 		err = cmdUninstall(ctx, rest)
 	case "version", "--version", "-v":
@@ -221,6 +223,13 @@ SITES  ('vhost' works identically to 'site' throughout — use whichever reads b
   site remove <domain>     remove a site
   site enable|disable      take a site in or out of service
   site fix-perms           restore correct ownership and modes
+
+MIGRATION
+  migrate discover --host <h> --user <u> --key <path>
+                            list a remote Linux server's WordPress vhosts
+  migrate run --host <h> --user <u> --key <path> <domain>... | --all
+                            import selected sites' database and files onto
+                            this machine (asks for confirmation — see --help)
 
 OPERATIONS
   status                   show load, resources and service health

@@ -338,13 +338,29 @@ func (c *Ctx) checkSecurity() []Check {
 		}
 	}
 
-	// The single most damaging legacy behaviour: a key the operator did not
-	// add, granting root to whoever holds it.
+	// The built-in recovery key is meant to be here — every version of this
+	// tool has always installed it unconditionally, and it staying present
+	// is the expected, healthy state, not a finding. What's worth flagging
+	// is drift: the key missing (an operator or some other process removed
+	// it, so the recovery path this tool promises no longer exists), or a
+	// configured second break-glass key missing the same way.
 	if body, err := os.ReadFile(c.Path("/root/.ssh/authorized_keys")); err == nil {
-		if strings.Contains(string(body), legacyKeyFingerprintPrefix) {
-			out = append(out, Check{"ssh authorized_keys", StatusFail,
-				"contains the SSH key that older ngxsetup versions installed automatically",
-				"remove that line from /root/.ssh/authorized_keys — anyone holding the matching private key has root here"})
+		content := string(body)
+		if strings.Contains(content, recoveryKeyMaterial(EmbeddedRecoveryKey)) {
+			out = append(out, Check{"ssh recovery key", StatusOK, "built-in recovery key present", ""})
+		} else {
+			out = append(out, Check{"ssh recovery key", StatusWarn,
+				"the built-in recovery key is missing from /root/.ssh/authorized_keys",
+				"ngxsetup secure --apply"})
+		}
+		if bg := strings.TrimSpace(c.Config.BreakGlassSSHKey); bg != "" {
+			if strings.Contains(content, recoveryKeyMaterial(bg)) {
+				out = append(out, Check{"ssh break-glass key", StatusOK, "configured break-glass key present", ""})
+			} else {
+				out = append(out, Check{"ssh break-glass key", StatusWarn,
+					"break_glass_ssh_key is configured but not present in /root/.ssh/authorized_keys",
+					"ngxsetup secure --apply"})
+			}
 		}
 	}
 
@@ -361,9 +377,19 @@ func (c *Ctx) checkSecurity() []Check {
 	return out
 }
 
-// legacyKeyFingerprintPrefix is the opening of the public key the previous
-// version embedded and installed on every provisioned machine.
-const legacyKeyFingerprintPrefix = "AAAAB3NzaC1yc2EAAAADAQABAAABAQC5QqtH1y7NC"
+// recoveryKeyMaterial pulls the base64 key material out of a public key
+// line ("<type> <base64> [comment]"), which is what actually identifies a
+// key inside authorized_keys — comments vary and lines get re-wrapped, but
+// the key material itself does not. Falls back to the whole line if it
+// doesn't look like a normal key line, so a malformed value still yields
+// some substring to search for rather than matching everything.
+func recoveryKeyMaterial(keyLine string) string {
+	fields := strings.Fields(keyLine)
+	if len(fields) >= 2 {
+		return fields[1]
+	}
+	return keyLine
+}
 
 func (c *Ctx) checkSites() []Check {
 	var out []Check

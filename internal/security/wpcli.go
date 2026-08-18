@@ -145,14 +145,23 @@ func (w WPCLI) VerifyPluginChecksums(ctx context.Context) (findings []Finding, u
 }
 
 // wpItem is the shape wp-cli's --format=json gives for core/plugin/theme
-// version and update-availability queries.
+// version and update-availability queries. update_version — the version an
+// update would move to — is not one of wp-cli's default columns for `plugin
+// list`/`theme list`; it has to be asked for explicitly via --fields, which
+// OutdatedPlugins/OutdatedThemes below do, specifically so an operator
+// choosing what to patch can see "7.1 -> 7.2," not just "an update exists."
 type wpItem struct {
-	Name    string `json:"name"`
-	Title   string `json:"title"`
-	Status  string `json:"status"`
-	Update  string `json:"update"`
-	Version string `json:"version"`
+	Name          string `json:"name"`
+	Title         string `json:"title"`
+	Status        string `json:"status"`
+	Update        string `json:"update"`
+	Version       string `json:"version"`
+	UpdateVersion string `json:"update_version"`
 }
+
+// wpItemFields is the explicit --fields list every plugin/theme query below
+// uses, confirmed live against a real site's wp-cli output.
+const wpItemFields = "name,title,status,update,version,update_version"
 
 // OutdatedPlugins returns every installed plugin wp-cli reports an update
 // for. An outdated plugin is not itself a compromise, but it is the single
@@ -160,7 +169,7 @@ type wpItem struct {
 // back to a known, already-patched vulnerability in something that was never
 // updated.
 func (w WPCLI) OutdatedPlugins(ctx context.Context) ([]wpItem, error) {
-	out, err := w.runQuiet(ctx, "plugin", "list", "--update=available", "--format=json")
+	out, err := w.runQuiet(ctx, "plugin", "list", "--update=available", "--fields="+wpItemFields, "--format=json")
 	if err != nil {
 		return nil, err
 	}
@@ -169,7 +178,7 @@ func (w WPCLI) OutdatedPlugins(ctx context.Context) ([]wpItem, error) {
 
 // OutdatedThemes mirrors OutdatedPlugins for themes.
 func (w WPCLI) OutdatedThemes(ctx context.Context) ([]wpItem, error) {
-	out, err := w.runQuiet(ctx, "theme", "list", "--update=available", "--format=json")
+	out, err := w.runQuiet(ctx, "theme", "list", "--update=available", "--fields="+wpItemFields, "--format=json")
 	if err != nil {
 		return nil, err
 	}
@@ -193,6 +202,17 @@ func (w WPCLI) CoreUpdateAvailable(ctx context.Context) (string, error) {
 		return "", nil
 	}
 	return items[0].Version, nil
+}
+
+// CoreVersion reports the currently installed WordPress version — plain
+// text, not JSON; `wp core version` has no --format flag because its
+// output is already exactly one line.
+func (w WPCLI) CoreVersion(ctx context.Context) (string, error) {
+	out, err := w.runQuiet(ctx, "core", "version")
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(out), nil
 }
 
 func parseWPItems(out string) ([]wpItem, error) {

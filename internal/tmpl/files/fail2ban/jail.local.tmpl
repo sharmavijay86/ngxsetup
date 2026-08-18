@@ -33,14 +33,31 @@ maxretry = 4
 bantime  = 2h
 
 [nginx-http-auth]
-enabled = true
+# Disabled: this stock jail matches nginx's own HTTP Basic Auth failure
+# messages, and ngxsetup never configures Basic Auth anywhere — it has
+# nothing to ever match. Left enabled it is pure liability rather than
+# defense: confirmed live, on a freshly set-up box with no sites yet
+# registered, its logpath glob (*.error.log, matching only per-site logs
+# this tool creates once a site exists) expanded to zero files, and
+# fail2ban's "have not found any log file" for that one jail aborted the
+# *entire* server's startup — every jail below it included, sshd's own
+# brute-force protection along with it.
+enabled = false
 logpath = /var/log/nginx/*.error.log
 
 [nginx-limit-req]
 # Fires when a client keeps hitting the rate limits defined in nginx. Being
 # throttled once is normal; being throttled repeatedly is a bot.
 enabled  = true
+# Two paths, not one: the per-site glob (created once a site exists) plus
+# nginx's own top-level error.log, which the package itself creates before
+# any site is ever added. Without that second path this jail hits the same
+# "zero sites yet -> glob matches nothing -> fail2ban refuses to start at
+# all" failure nginx-http-auth's disabled comment above describes — a fresh
+# box with no sites is the normal state right after `ngxsetup setup`, not
+# an edge case worth accepting that failure for.
 logpath  = /var/log/nginx/*.error.log
+           /var/log/nginx/error.log
 maxretry = 20
 findtime = 5m
 bantime  = 1h

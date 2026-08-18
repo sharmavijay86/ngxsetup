@@ -10,6 +10,7 @@ import (
 
 	"ngxsetup/internal/db"
 	"ngxsetup/internal/logx"
+	"ngxsetup/internal/migrate"
 	"ngxsetup/internal/state"
 )
 
@@ -78,6 +79,67 @@ type RestoreResult struct {
 	SafetyBackup string // path of the pre-restore backup, "" if skipped
 }
 
+// EnsureSiteDatabase makes sure a site's database schema exists, recreating
+// it if it does not — the recovery path for an accidental `DROP DATABASE`,
+// as distinct from a dropped table or deleted rows, which never leave the
+// schema itself missing. db.Client.Restore only ever replaces a schema's
+// contents; it does not create one (see its own doc comment), so without
+// this step restoring after a full `DROP DATABASE` would fail with
+// "Unknown database" before a single row loaded — this is what makes
+// `db restore` / `borg restore-db` a genuine one-command recovery in that
+// case too, rather than requiring the operator to recreate the schema by
+// hand first.
+//
+// The database user account almost always survives a `DROP DATABASE` —
+// both MySQL and MariaDB leave a granted account's privileges in place even
+// after the schema they were granted on disappears — so the common case is
+// just recreating the empty schema and re-issuing its grant, via
+// db.Client.EnsureSchemaAndGrant, which never touches the account's
+// password. If the account is gone too (an unusual combination — it means
+// something beyond a plain `DROP DATABASE` also happened), a password is
+// needed to recreate it, and the one place that password still lives is
+// wp-config.php on disk, since a database-only accident never touches the
+// file tree. That is read as a last resort, via the same wp-config.php
+// parser the migration feature uses, so the recreated account's password
+// matches what the site's files already expect and wp-config.php itself
+// never needs rewriting.
+func (c *Ctx) EnsureSiteDatabase(site state.Site) error {
+	if site.DBName == "" {
+		return nil // a plain vhost, not a WordPress site — nothing to ensure
+	}
+	client := c.DBClient()
+	exists, err := client.DatabaseExists(c.Context, site.DBName)
+	if err != nil {
+		return fmt.Errorf("checking whether database %s exists: %w", site.DBName, err)
+	}
+	if exists {
+		return nil
+	}
+
+	const host = "localhost"
+	userExists, err := client.UserExists(c.Context, site.DBUser, host)
+	if err != nil {
+		return fmt.Errorf("checking whether database user %s exists: %w", site.DBUser, err)
+	}
+
+	if userExists {
+		logx.Warn("database %s is missing; recreating the schema and its grant for the existing account before continuing", site.DBName)
+		return client.EnsureSchemaAndGrant(c.Context, site.DBName, site.DBUser, host, c.Plan.DB.Collation)
+	}
+
+	logx.Warn("database %s and its user account are both missing; recovering the account's password from wp-config.php before continuing", site.DBName)
+	wpConfigPath := c.Path(filepath.Join(site.Root, "wp-config.php"))
+	raw, err := os.ReadFile(wpConfigPath)
+	if err != nil {
+		return fmt.Errorf("database %s and its user account are both gone, and wp-config.php could not be read to recover a password (%w) — restore the site's files first, then retry", site.DBName, err)
+	}
+	info, ok := migrate.ParseWPConfig(string(raw))
+	if !ok || info.DBPassword == "" {
+		return fmt.Errorf("database %s and its user account are both gone, and wp-config.php did not contain a usable password — the account needs to be recreated by hand before this site can be restored", site.DBName)
+	}
+	return client.Provision(c.Context, site.DBName, site.DBUser, info.DBPassword, host, c.Plan.DB.Collation)
+}
+
 // RestoreDatabase loads a .sql file into one site's database, overwriting its
 // current contents.
 //
@@ -97,6 +159,12 @@ func (c *Ctx) RestoreDatabase(nameOrSlug, sqlPath string, skipSafetyBackup bool)
 	}
 	if _, err := os.Stat(sqlPath); err != nil {
 		return nil, fmt.Errorf("reading %s: %w", sqlPath, err)
+	}
+
+	if !c.Writer.DryRun {
+		if err := c.EnsureSiteDatabase(*site); err != nil {
+			return nil, err
+		}
 	}
 
 	result := &RestoreResult{Domain: site.Domain, DBName: site.DBName}

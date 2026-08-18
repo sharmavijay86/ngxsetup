@@ -105,13 +105,35 @@ func TestVerifyCoreChecksumsReportsFailures(t *testing.T) {
 }
 
 func TestParseWPItemsOutdatedPlugins(t *testing.T) {
-	out := `[{"name":"akismet","status":"active","update":"available","version":"5.3","update_version":"5.4"}]`
+	out := `[{"name":"akismet","title":"Akismet","status":"active","update":"available","version":"5.3","update_version":"5.4"}]`
 	items, err := parseWPItems(out)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(items) != 1 || items[0].Name != "akismet" {
 		t.Errorf("items = %+v", items)
+	}
+	// update_version — the version an update would move to, not just "an
+	// update exists" — is what lets an operator see "5.3 -> 5.4" rather
+	// than a bare yes/no before choosing what to patch.
+	if items[0].UpdateVersion != "5.4" {
+		t.Errorf("UpdateVersion = %q, want 5.4", items[0].UpdateVersion)
+	}
+	if items[0].Title != "Akismet" {
+		t.Errorf("Title = %q, want Akismet", items[0].Title)
+	}
+}
+
+func TestWPCLICoreVersion(t *testing.T) {
+	w := WPCLI{Runner: fakeWPRunner{installed: true, responses: map[string]fakeResponse{
+		"core version": {out: "6.7.1\n"},
+	}}, User: "u", Path: "/x"}
+	v, err := w.CoreVersion(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if v != "6.7.1" {
+		t.Errorf("CoreVersion = %q, want 6.7.1 (trimmed)", v)
 	}
 }
 

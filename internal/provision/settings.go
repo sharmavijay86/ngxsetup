@@ -1,6 +1,7 @@
 package provision
 
 import (
+	"encoding/base64"
 	"fmt"
 	"strconv"
 	"strings"
@@ -53,6 +54,7 @@ func ConfigRows(c *Ctx) [][2]string {
 		{"phpmyadmin.allow_list", strings.Join(cfg.PhpMyAdmin.AllowList, ",")},
 		{"security_yara_rules_dir", cfg.SecurityYARARulesDir},
 		{"geoip_database_path", cfg.GeoIPDatabasePath},
+		{"break_glass_ssh_key", cfg.BreakGlassSSHKey},
 		{"borg.enabled", strconv.FormatBool(cfg.Borg.Enabled)},
 		{"borg.repo", cfg.Borg.Repo},
 		{"borg.encryption", cfg.Borg.Encryption},
@@ -149,6 +151,13 @@ func SetConfigKey(c *Ctx, key, value string) error {
 		cfg.SecurityYARARulesDir = value
 	case "geoip_database_path":
 		cfg.GeoIPDatabasePath = value
+	case "break_glass_ssh_key":
+		if value != "" {
+			if verr := validateSSHPublicKeyLine(value); verr != nil {
+				return verr
+			}
+		}
+		cfg.BreakGlassSSHKey = value
 	case "borg.enabled":
 		cfg.Borg.Enabled, err = parseBool()
 	case "borg.repo":
@@ -170,4 +179,42 @@ func SetConfigKey(c *Ctx, key, value string) error {
 		return err
 	}
 	return cfg.Validate()
+}
+
+// sshPublicKeyTypes are the algorithm names a valid OpenSSH public key line
+// starts with — the same set sshd itself recognises.
+var sshPublicKeyTypes = map[string]bool{
+	"ssh-rsa": true, "ssh-dss": true, "ssh-ed25519": true,
+	"ecdsa-sha2-nistp256": true, "ecdsa-sha2-nistp384": true, "ecdsa-sha2-nistp521": true,
+	"sk-ssh-ed25519@openssh.com": true, "sk-ecdsa-sha2-nistp256@openssh.com": true,
+}
+
+// validateSSHPublicKeyLine rejects anything that is not plausibly one
+// public key on one line — right shape (type, base64 key material,
+// optional comment), a recognised key type, and not a private key pasted
+// in by mistake, the single most common accident this guards against.
+// This is the only validation break_glass_ssh_key gets: it does not check
+// that the key is reachable, unique, or actually held by whoever is
+// configuring it, because none of that is this tool's business to know —
+// only that whatever is about to be installed into root's authorized_keys
+// is at least a well-formed key.
+func validateSSHPublicKeyLine(line string) error {
+	line = strings.TrimSpace(line)
+	if strings.Contains(line, "\n") {
+		return fmt.Errorf("break_glass_ssh_key must be a single line — one public key, not a file")
+	}
+	if strings.Contains(line, "PRIVATE KEY") {
+		return fmt.Errorf("that looks like a private key, not a public one — use the matching .pub file's contents instead, never the private key itself")
+	}
+	fields := strings.Fields(line)
+	if len(fields) < 2 {
+		return fmt.Errorf("break_glass_ssh_key must look like '<type> <base64-key> [comment]', e.g. 'ssh-ed25519 AAAA... you@host'")
+	}
+	if !sshPublicKeyTypes[fields[0]] {
+		return fmt.Errorf("%q is not a recognised SSH public key type (expected ssh-ed25519, ssh-rsa, ecdsa-sha2-..., or an sk- security-key variant)", fields[0])
+	}
+	if _, err := base64.StdEncoding.DecodeString(fields[1]); err != nil {
+		return fmt.Errorf("the key material after %q does not look like valid base64: %w", fields[0], err)
+	}
+	return nil
 }
