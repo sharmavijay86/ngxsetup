@@ -113,9 +113,12 @@ jobs:
 
       - name: Site isolation is real
         run: |
-          # The pool must run as the site's own user, not www-data.
-          sudo ps -eo user,args | grep '[p]hp-fpm: pool ci-test' | head -1
-          sudo ps -eo user,args | grep '[p]hp-fpm: pool ci-test' | grep -q '^web-ci-test' \
+          # The pool must run as the site's own user, not www-data. ps's
+          # default "user" column is 8 characters wide and silently
+          # truncates ("web-ci-+"), which would falsely fail this check
+          # against a real, correctly-scoped username — hence user:32.
+          sudo ps -eo user:32,args | grep '[p]hp-fpm: pool ci-test' | head -1
+          sudo ps -eo user:32,args | grep '[p]hp-fpm: pool ci-test' | grep -q '^web-ci-test' \
             || { echo "pool is not running as the site user"; exit 1; }
           # wp-config.php must not be world-readable.
           perms=$(sudo stat -c '%a' /var/www/ci-test-example-com/public/wp-config.php)
