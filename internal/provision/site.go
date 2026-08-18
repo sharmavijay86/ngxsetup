@@ -210,7 +210,9 @@ func (c *Ctx) createSiteAccount(rec state.Site) error {
 	return nil
 }
 
-// writeSiteConfigs renders the nginx server block and the PHP-FPM pool.
+// writeSiteConfigs renders the nginx server block. The PHP-FPM pool is
+// WriteFPMService's job, not this one — see its doc comment for why a pool
+// belongs in FPMPoolDir and nowhere near the distribution's own pool.d.
 func (c *Ctx) writeSiteConfigs(rec state.Site) error {
 	headers := "security-headers.conf"
 	if rec.TLS {
@@ -265,26 +267,7 @@ func (c *Ctx) writeSiteConfigs(rec state.Site) error {
 			return err
 		}
 	}
-
-	poolBody, err := tmpl.Render("php/pool.conf.tmpl", tmpl.Pool{
-		Plan:            c.Plan,
-		Slug:            rec.Slug,
-		Domain:          rec.Domain,
-		User:            rec.User,
-		Group:           rec.User,
-		SocketPath:      rec.SocketPath,
-		Root:            rec.Root,
-		TmpDir:          c.siteTmpDir(rec.Slug),
-		SessionDir:      c.siteSessionDir(rec.Slug),
-		TLS:             rec.TLS,
-		StrictFunctions: c.Config.StrictPHPFunctions,
-	})
-	if err != nil {
-		return err
-	}
-	poolPath := fmt.Sprintf("/etc/php/%s/fpm/pool.d/%s.conf", c.PHPVersion, rec.Slug)
-	_, err = c.Writer.Write(poolPath, poolBody, 0o644, false)
-	return err
+	return nil
 }
 
 // installWordPress downloads core and writes wp-config.php.

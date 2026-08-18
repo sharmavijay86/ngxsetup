@@ -229,7 +229,36 @@ func TestSiteConfigsAreWritten(t *testing.T) {
 		t.Error("a non-TLS site must use the non-HSTS header snippet")
 	}
 
-	pool := read(t, c, "/etc/php/8.3/fpm/pool.d/example-com.conf")
+	// writeSiteConfigs must never write into the distribution's own pool.d —
+	// that is exactly the file a re-enabled shared php-fpm service would pick
+	// up and run outside the site's jail. The pool is WriteFPMService's job,
+	// tested separately below, into FPMPoolDir instead.
+	if exists(t, c, "/etc/php/8.3/fpm/pool.d/example-com.conf") {
+		t.Error("writeSiteConfigs must not write a pool into the distribution's pool.d")
+	}
+
+	if !exists(t, c, "/etc/nginx/sites-enabled/example-com.conf") {
+		t.Error("site was not enabled")
+	}
+	if !exists(t, c, "/etc/nginx/sites-available/example-com.custom.conf") {
+		t.Error("per-site override file was not created")
+	}
+}
+
+// The isolated pool WriteFPMService writes — the one that actually runs a
+// site — lives in FPMPoolDir, confined and running as the site's own user.
+func TestWriteFPMServiceWritesAnIsolatedPool(t *testing.T) {
+	c := testCtx(t)
+	rec := state.Site{
+		Slug: "example-com", Domain: "example.com",
+		Root: c.DocumentRoot("example-com"), User: "web-example-com",
+		SocketPath: c.SocketPath("example-com"), PHPVersion: "8.3",
+	}
+	if err := c.WriteFPMService(rec); err != nil {
+		t.Fatal(err)
+	}
+
+	pool := read(t, c, "/etc/ngxsetup/fpm/pools/example-com.conf")
 	if !strings.Contains(pool, "user  = web-example-com") {
 		t.Errorf("pool does not run as the site user:\n%s", pool)
 	}
@@ -240,11 +269,8 @@ func TestSiteConfigsAreWritten(t *testing.T) {
 		t.Error("strict function list missing from the pool")
 	}
 
-	if !exists(t, c, "/etc/nginx/sites-enabled/example-com.conf") {
-		t.Error("site was not enabled")
-	}
-	if !exists(t, c, "/etc/nginx/sites-available/example-com.custom.conf") {
-		t.Error("per-site override file was not created")
+	if exists(t, c, "/etc/php/8.3/fpm/pool.d/example-com.conf") {
+		t.Error("WriteFPMService must not write into the distribution's pool.d either")
 	}
 }
 
@@ -318,6 +344,31 @@ func TestSharedWWWPoolIsRemoved(t *testing.T) {
 	}
 	if exists(t, c, poolPath) {
 		t.Error("the shared www pool is still present; every site could run as www-data")
+	}
+}
+
+// A machine that was set up by an older, buggy build has a stray per-site
+// pool in the distribution's pool.d alongside the real, isolated one in
+// FPMPoolDir — the exact file a re-enabled shared service would run outside
+// the site's jail. Applying PHP config again (`tune --apply`) must sweep it
+// up for every registered site, not just newly created ones.
+func TestApplyPHPRemovesStrayLegacyPerSitePools(t *testing.T) {
+	c := testCtx(t)
+	c.State.Upsert(state.Site{Slug: "legacy-com", Domain: "legacy.com", PHPVersion: "8.3"})
+
+	legacy := "/etc/php/8.3/fpm/pool.d/legacy-com.conf"
+	if err := os.MkdirAll(filepath.Dir(c.Path(legacy)), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(c.Path(legacy), []byte("[legacy-com]\nuser = web-legacy-com\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := c.ApplyPHP(); err != nil {
+		t.Fatal(err)
+	}
+	if exists(t, c, legacy) {
+		t.Error("a stray legacy per-site pool in the distribution's pool.d survived ApplyPHP")
 	}
 }
 

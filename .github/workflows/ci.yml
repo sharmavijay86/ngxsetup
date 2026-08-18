@@ -66,10 +66,25 @@ jobs:
       - name: nginx accepts the generated configuration
         run: sudo nginx -t
 
-      - name: php-fpm accepts the generated configuration
+      # There is deliberately no "php-fpm -t" step here against the
+      # distribution's shared php-fpm.conf: setup disables that service and
+      # it owns no pools by design (every site gets its own isolated
+      # instance and pool under /etc/ngxsetup/fpm — see ApplyPHP's and
+      # ValidatePHP's doc comments). Testing the distro's config would just
+      # confirm it is empty. What has to be confirmed instead is that the
+      # shared service is correctly left disabled, and per-site config
+      # validity is exercised for real once a site exists, a few steps down.
+      - name: distribution php-fpm service is correctly disabled
         run: |
           version=$(php -r "echo PHP_MAJOR_VERSION.'.'.PHP_MINOR_VERSION;")
-          sudo "php-fpm${version}" -t
+          unit="php${version}-fpm.service"
+          systemctl list-unit-files --no-legend "$unit" | grep -q "$unit" \
+            || { echo "expected $unit to exist as a unit"; exit 1; }
+          systemctl is-enabled "$unit" >/dev/null 2>&1 \
+            && { echo "$unit should be disabled"; exit 1; }
+          systemctl is-active "$unit" >/dev/null 2>&1 \
+            && { echo "$unit should not be running"; exit 1; }
+          echo "$unit is correctly disabled and inactive"
 
       - name: MariaDB started with the generated configuration
         run: |

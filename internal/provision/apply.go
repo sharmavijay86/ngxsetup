@@ -154,6 +154,25 @@ func (c *Ctx) ApplyPHP() error {
 		logx.Change("removed the shared www PHP-FPM pool in favour of per-site pools")
 	}
 
+	// Older builds also wrote each site's pool straight into the
+	// distribution's pool.d, alongside the isolated one this tool actually
+	// runs from FPMPoolDir — a leftover from before per-site isolation
+	// existed, fixed once writeSiteConfigs stopped doing it. A stray copy
+	// there is inert as long as the shared service above stays disabled,
+	// but it is exactly the file a re-enabled shared service would pick up
+	// and run outside the site's jail, so an install upgrading past that
+	// bug gets every site's stray copy swept up here rather than needing
+	// each one touched by hand.
+	for _, s := range c.State.Sites {
+		legacy := fmt.Sprintf("/etc/php/%s/fpm/pool.d/%s.conf", c.PHPVersion, s.Slug)
+		if _, err := os.Stat(c.Path(legacy)); err == nil {
+			if err := c.Writer.Remove(legacy); err != nil {
+				return err
+			}
+			logx.Change("removed a stray legacy PHP-FPM pool for %s from the distribution's pool.d", s.Domain)
+		}
+	}
+
 	// No placeholder pool is needed here any more. That hack existed because
 	// the single shared FPM service refuses to start with zero pools, which
 	// was the state a fresh machine landed in once the packaged www pool was
