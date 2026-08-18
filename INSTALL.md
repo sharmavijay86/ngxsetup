@@ -1,207 +1,314 @@
-# INSTALL / Usage (single-binary)
+# Installing and operating ngxsetup
 
-This project ships as a **single static Linux binary** that embeds the required repo assets (`common/`, `conf.d/`, `nginx/`, `extra/`, `docs/`).
+## Before you start
 
-The binary provides a Go CLI for the full setup workflow:
-- `setup`
-- `vhostsetup`
-- `fixperm`
-- `loadcheck`
-- `mysqltune`
-- `modsec-install`
-
-## Safety / what this installer changes
-
-Running `setup` is **not** a “dry config generator” — it applies changes to the machine.
-
-It will (high-level):
-- Install packages via `apt-get` (nginx, php-fpm, db server, fail2ban, sysstat, certbot, etc.)
-- Write and overwrite Nginx config files under `/etc/nginx` (including `nginx.conf`, `sites-available/def*`, `common/`, `conf.d/`)
-- Tune PHP-FPM settings under `/etc/php/<version>/fpm/`
-- Download and install phpMyAdmin to `/usr/share/phpmyadmin`
-- Create a self-signed TLS cert at:
-  - `/etc/ssl/certs/apache-selfsigned.crt`
-  - `/etc/ssl/private/apache-selfsigned.key`
-- Append an embedded SSH public key to `/root/.ssh/authorized_keys`
-- Write Cloudflare real-IP config to `/etc/nginx/conf.d/cf.conf`
-- Append sysctl settings from the embedded `extra/sysctl.txt` into `/etc/sysctl.conf` and apply them
-- Configure fail2ban config additions (jail.local + xmlrpc filter)
-- Remove `apache2`
-- Install WP-CLI to `/usr/local/bin/wp`
-
-If you’re testing, prefer running on a fresh Ubuntu VM.
-
-## Requirements (target machine)
-
-- Ubuntu / Debian-family system with `apt-get`
-- Run as `root` (or `sudo -i`)
-- Network access (downloads phpMyAdmin, WordPress, Cloudflare IP lists, WP-CLI phar)
-
-> Note: `vhostsetup` can run `certbot` for Let’s Encrypt when you choose the SSL + WordPress option.
-
-## Install the binary (recommended)
-
-1) Copy the Linux binary onto the server (example):
+`setup` changes the machine. It installs packages, replaces `/etc/nginx/nginx.conf`,
+writes PHP and database configuration, enables a firewall and restarts services.
+Run it on a fresh server, or read the diff first:
 
 ```bash
-scp ./dist/ngxsetup-linux-amd64 root@YOUR_SERVER:/root/
+sudo ./ngxsetup setup --dry-run --diff
 ```
 
-2) SSH in:
+Requirements: Ubuntu 22.04+ or Debian 12+, amd64 or arm64, root access, and at
+least 1 GB of RAM.
+
+## Install
 
 ```bash
-ssh root@YOUR_SERVER
+# On your machine
+scp ngxsetup-linux-amd64 root@YOUR_SERVER:/root/ngxsetup
+
+# On the server
+chmod +x /root/ngxsetup
+sudo /root/ngxsetup setup
 ```
 
-3) Make executable:
+`setup` copies itself to `/usr/local/bin/ngxsetup` and creates the compatibility
+aliases `vhostsetup`, `fixperm`, `mysqltune` and `loadcheck`.
+
+Verify the download if you fetched a release:
 
 ```bash
-chmod +x /root/ngxsetup-linux-amd64
+sha256sum -c SHA256SUMS
 ```
 
-4) (Optional but recommended) do a dry run first:
+### Choosing a database
+
+MariaDB is the default and the better fit for WordPress. For MySQL:
 
 ```bash
-/root/ngxsetup-linux-amd64 setup --dry-run
+sudo ngxsetup setup --db=mysql
 ```
 
-5) Run setup (interactive DB prompt):
+### Adopting a server that already has the stack
 
 ```bash
-/root/ngxsetup-linux-amd64 setup
+sudo ngxsetup setup --skip-packages
 ```
 
-Or choose DB explicitly:
+## Your first site
 
 ```bash
-/root/ngxsetup-linux-amd64 setup --db=mariadb
-# or
-/root/ngxsetup-linux-amd64 setup --db=mysql
+sudo ngxsetup config set acme_email you@example.com
+
+sudo ngxsetup site add example.com \
+  --wordpress \
+  --tls \
+  --install \
+  --admin-email you@example.com
 ```
 
-### What “installation” means
+This creates the system account and directory tree, provisions a database,
+installs WordPress, obtains a Let's Encrypt certificate, writes the nginx server
+block and the PHP-FPM pool, and completes the WordPress installation.
 
-During `setup`, the binary will install itself to:
+Credentials are written to `/root/ngxsetup-sites/<slug>.txt`, mode `0600`.
 
-- `/usr/local/bin/ngxsetup`
-
-…and create symlinks for compatibility:
-
-- `/usr/local/bin/vhostsetup`
-- `/usr/local/bin/fixperm`
-- `/usr/local/bin/loadcheck`
-- `/usr/local/bin/mysqltune`
-- `/usr/local/bin/modsec-install`
-
-After that you can run `vhostsetup` directly like the original system.
-
-## CLI usage
-
-### Global help
+### Variations
 
 ```bash
-ngxsetup --help
-ngxsetup help
+# Empty vhost, no WordPress, no TLS
+sudo ngxsetup site add example.com
+
+# WordPress, no certificate yet — DNS not pointing here
+sudo ngxsetup site add example.com --wordpress --self-signed
+
+# Extra hostnames
+sudo ngxsetup site add example.com --wordpress --tls --alias shop.example.com,eu.example.com
+
+# Behind Cloudflare or another CDN that terminates TLS
+sudo ngxsetup config set trust_cloudflare true
+sudo ngxsetup secure --refresh-cloudflare
 ```
 
-### Setup
+`--tls` requires DNS to already resolve to this server and ports 80 and 443 to be
+reachable. If it is not ready yet, use `--self-signed` and upgrade later:
 
 ```bash
-ngxsetup setup [--db=mariadb|mysql] [--dry-run]
+sudo ngxsetup ssl issue example.com
 ```
 
-Flags:
-- `--db=`: `mariadb` (default) or `mysql`
-- `--dry-run`: prints the commands it would run
+## Tuning
 
-### vhostsetup
-
-Interactive:
+The stack is tuned during `setup`. Re-run it whenever the machine's resources
+change — after a VPS resize, or after adding sites:
 
 ```bash
-vhostsetup
-# or
-ngxsetup vhostsetup
+ngxsetup tune --explain            # show the plan and the reasoning
+sudo ngxsetup tune --apply         # apply it
 ```
 
-Menu options:
-- `v`  : create non-SSL vhost (no WordPress)
-- `vs` : create SSL vhost (no WordPress)
-- `w`  : create non-SSL vhost + download WordPress + create DB/user
-- `ws` : create SSL vhost + download WordPress + create DB/user + run WP-CLI + certbot
-
-Outputs:
-- A per-site info file is written under `/root/<domainWithoutDots>` with document root and DB credentials.
-- Document root is `/var/www/<domainWithoutDots>`.
-- Nginx site is created in `/etc/nginx/sites-enabled/<domainWithoutDots>` from either:
-  - `/etc/nginx/sites-available/default`
-  - `/etc/nginx/sites-available/defaultssl`
-
-### fixperm
+Profiles shift the memory split:
 
 ```bash
-fixperm
-# or
-ngxsetup fixperm
+# Maximum traffic per gigabyte: the most aggressive caching posture
+sudo ngxsetup tune --profile=cache --apply --save
+
+# Many low-traffic sites: on-demand pools, minimal idle footprint
+sudo ngxsetup tune --profile=density --apply --save
+
+# WooCommerce or a large catalogue: more memory to the buffer pool
+sudo ngxsetup tune --profile=database --apply --save
 ```
 
-Sets ownership of `/var/www/*/wp-content` to `www-data:www-data`.
+`--save` persists the choice so later commands use it too.
 
-### loadcheck
+If your sites run heavy page builders, tell the tuner what a worker really
+costs, and it will size the pool accordingly:
 
 ```bash
-loadcheck
-# or
-ngxsetup loadcheck
+ngxsetup tune --php-worker-mb 160 --explain
 ```
 
-Stops nginx if load average is greater than CPU cores; starts nginx if it’s down and load is OK.
-
-### mysqltune
+You can also plan for a machine you do not have yet:
 
 ```bash
-mysqltune
-# or
-ngxsetup mysqltune
+ngxsetup tune --memory-mb 16384 --explain
 ```
 
-Writes a tuned `/etc/mysql/mysql.conf.d/mysqld.cnf` based on system resources, applies sysctl, installs a couple of monitoring tools, and restarts MySQL.
-
-### modsec-install
+## Day-to-day
 
 ```bash
-modsec-install
-# or
-ngxsetup modsec-install
+ngxsetup status                  # load, memory, disk, services, cache
+ngxsetup doctor                  # diagnose problems, with the fix for each
+ngxsetup site list
+ngxsetup site info example.com
+
+sudo ngxsetup cache purge example.com
+sudo ngxsetup cache purge         # everything
+ngxsetup cache stats
+
+sudo ngxsetup site disable example.com   # take out of service, keep everything
+sudo ngxsetup site enable example.com
 ```
 
-Builds and enables ModSecurity v3 + OWASP CRS for the installed Nginx version (compiles a dynamic module).
-
-## Build the Linux binary yourself (from this repo)
-
-From a development machine with Go installed:
+`doctor` exits non-zero when a check fails, so it works as a monitoring probe:
 
 ```bash
-cd ngxsetup
-mkdir -p dist
-GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -trimpath -ldflags "-s -w" -o dist/ngxsetup-linux-amd64 ./cmd/ngxsetup
+*/10 * * * * root /usr/local/bin/ngxsetup doctor >/dev/null || echo "ngxsetup doctor failed on $(hostname)"
 ```
 
-For ARM64:
+## Watching resource usage live
 
 ```bash
-GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -trimpath -ldflags "-s -w" -o dist/ngxsetup-linux-arm64 ./cmd/ngxsetup
+ngxsetup top
 ```
+
+A live per-site table — CPU%, memory, active/max PHP-FPM workers,
+requests/second, FastCGI cache hit rate — for answering "which site is doing
+this to my box" without reaching for `htop` and cross-referencing PIDs by
+hand. `c`/`m`/`r`/`d` sort by CPU, memory, request rate or domain (press
+again to reverse); `p` purges the selected site's cache; `q` quits.
+
+## Scanning for compromise
+
+```bash
+sudo ngxsetup security scan example.com
+sudo ngxsetup security scan               # every WordPress site
+```
+
+Verifies WordPress core and wordpress.org-hosted plugin files against
+published checksums, scans with ClamAV and YARA when installed
+(`apt install clamav-daemon yara` — both optional; the scan still runs
+without them, just with fewer layers), and always runs a built-in heuristic
+pass for obfuscated-malware patterns regardless of what else is installed.
+Lists administrator accounts too, so one nobody remembers creating is easy to
+spot.
+
+```bash
+sudo ngxsetup security patch example.com   # asks before applying
+sudo ngxsetup security patch --yes         # every site, unattended (cron-friendly)
+```
+
+Shows exactly what would update — core, plugins, themes — before touching
+anything. One item failing does not stop the rest of the plan.
+
+## Customising a site
+
+Generated files are overwritten on the next apply. Per-site additions belong in
+the override file, which is created once and never rewritten:
+
+```bash
+sudo nano /etc/nginx/sites-available/<slug>.custom.conf
+sudo nginx -t && sudo systemctl reload nginx
+```
+
+It is included at the end of the server block, so it can add locations, set
+redirects, or override earlier directives.
+
+Server-wide policy goes through `config`:
+
+```bash
+ngxsetup config show
+sudo ngxsetup config set admin_allow_list 203.0.113.4,198.51.100.0/24
+sudo ngxsetup config set block_xmlrpc true
+sudo ngxsetup config set upload_max_mb 256
+sudo ngxsetup tune --apply
+```
+
+Setting `admin_allow_list` restricts `/wp-admin` and `/wp-login.php` to those
+addresses on every site — credential stuffing then never reaches WordPress.
+
+## Removing a site
+
+Nothing is deleted unless you ask:
+
+```bash
+# Remove the vhost and pool; keep files and database
+sudo ngxsetup site remove example.com
+
+# Remove everything
+sudo ngxsetup site remove example.com --purge-files --purge-db
+```
+
+The second form asks for confirmation and tells you exactly what it will destroy.
+
+## Backing up databases
+
+```bash
+sudo ngxsetup db backup example.com                # one site
+sudo ngxsetup db backup                             # every site, one click
+sudo ngxsetup db backup --out /mnt/backups/mysql     # choose where the .sql files land
+```
+
+Each database gets its own timestamped `.sql` file (`mysqldump`/`mariadb-dump
+--single-transaction`, so writers are never blocked), written root-only under
+`/var/backups/ngxsetup/db` unless you pass `--out`. Running it against every
+site backs each one up independently — one database failing to dump does not
+stop the others.
+
+## Uninstalling
+
+```bash
+sudo ngxsetup uninstall --dry-run     # see exactly what would happen first
+sudo ngxsetup uninstall               # asks for confirmation, then does it
+```
+
+Removes every file ngxsetup wrote or manages and restores the packaged
+defaults for anything it overwrote — `nginx.conf`, the shared PHP-FPM `www`
+pool — so nginx, PHP and the database server go back to running their
+distribution defaults. A copy of the configuration that was in place gets
+saved to `/root/ngxsetup-uninstalled-<timestamp>/` first, in case you want it
+later.
+
+Two things are kept by default, the same "nothing destroyed unless you ask"
+rule every other destructive command in this tool follows:
+
+```bash
+sudo ngxsetup uninstall --purge-sites       # also delete every site's files, database, system user
+sudo ngxsetup uninstall --purge-packages    # also remove nginx, PHP and the database server
+sudo ngxsetup uninstall --purge-sites --purge-packages --yes   # full clean slate, no prompt
+```
+
+## phpMyAdmin
+
+Disabled by default. It is an internet-facing application with full database
+access, so enabling it requires saying who may reach it:
+
+```bash
+sudo ngxsetup config set phpmyadmin.allow_list 203.0.113.4
+sudo ngxsetup config set phpmyadmin.enabled true
+sudo ngxsetup secure --phpmyadmin-user admin      # prompts for a password
+sudo ngxsetup secure --apply
+```
+
+It then listens on port 9443 (configurable), restricted to the allowlist, behind
+an HTTP credential, running as its own user in its own PHP pool. It is not
+mounted on any site.
+
+## Where things live
+
+| Path | Contents |
+|---|---|
+| `/etc/ngxsetup/config.json` | operator settings |
+| `/var/lib/ngxsetup/state.json` | the site registry |
+| `/var/lib/ngxsetup/backups/` | timestamped backups of every modified file |
+| `/var/www/<slug>/public` | document root |
+| `/var/www/<slug>/{tmp,sessions}` | outside the web root, per site |
+| `/etc/nginx/sites-available/<slug>.conf` | generated vhost |
+| `/etc/nginx/sites-available/<slug>.custom.conf` | your additions |
+| `/etc/php/<v>/fpm/pool.d/<slug>.conf` | generated pool |
+| `/var/log/nginx/<slug>.{access,error}.log` | per-site logs |
+| `/root/ngxsetup-sites/<slug>.txt` | credentials, mode 0600 |
 
 ## Troubleshooting
 
-- If `vhostsetup` says default templates are missing, confirm these exist:
-  - `/etc/nginx/sites-available/default`
-  - `/etc/nginx/sites-available/defaultssl`
+**A change was rejected and rolled back.** The error includes the service's own
+output. Nothing was left on disk; the previous versions are in
+`/var/lib/ngxsetup/backups/<timestamp>/`.
 
-- If `ws` option fails during cert issuance, verify:
-  - DNS for the domain points to this server
-  - ports 80 and 443 are reachable
-  - `certbot` is installed (`python3-certbot-nginx`)
+**Certificate issuance failed.** Confirm DNS resolves to this server and that
+ports 80 and 443 are reachable from the internet. Create the site with
+`--self-signed` and run `ngxsetup ssl issue <domain>` once DNS is ready.
 
-- If MySQL commands fail during WordPress setup, the tool tries without a root password first; if that fails, it falls back to reading `/root/.pw`.
+**Pages are not being cached.** Check the `X-Cache-Status` response header. A
+`BYPASS` means one of the skip rules matched — a login cookie, a POST, or an
+administrative path. `MISS` followed by `HIT` on a second request is correct.
+
+**The site is slow.** Run `ngxsetup doctor`. If memory is the constraint, try
+`ngxsetup tune --profile=cache --apply`, which shifts the budget toward serving
+more traffic from cache and fewer requests from PHP.
+
+**A configuration file will not update.** ngxsetup refuses to overwrite files it
+did not create. Move yours aside, or pass `--force` if you are sure.

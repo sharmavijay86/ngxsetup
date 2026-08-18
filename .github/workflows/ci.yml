@@ -1,0 +1,128 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    name: Unit tests
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Format check
+        run: |
+          unformatted=$(gofmt -l .)
+          if [ -n "$unformatted" ]; then
+            echo "These files need gofmt:"
+            echo "$unformatted"
+            exit 1
+          fi
+
+      - name: Vet
+        run: go vet ./...
+
+      - name: Test
+        run: go test -race -count=1 ./...
+
+      - name: Cross-compile
+        run: |
+          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build ./cmd/ngxsetup
+          CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build ./cmd/ngxsetup
+
+  integration:
+    name: End-to-end on a real stack
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Build
+        run: go build -o ngxsetup ./cmd/ngxsetup
+
+      # The unit tests verify that templates render; only a real nginx, PHP-FPM
+      # and MariaDB can verify that what they render is actually valid. This is
+      # the check that catches a directive that does not exist, an option a
+      # given flavour rejects, and an include path that does not resolve.
+      - name: Install the stack
+        run: |
+          sudo apt-get update -qq
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq \
+            nginx php-fpm php-mysql php-xml php-curl php-gd php-mbstring \
+            php-zip php-intl php-bcmath php-apcu mariadb-server certbot
+
+      - name: Apply configuration
+        run: sudo ./ngxsetup setup --skip-packages --verbose
+
+      - name: nginx accepts the generated configuration
+        run: sudo nginx -t
+
+      - name: php-fpm accepts the generated configuration
+        run: |
+          version=$(php -r "echo PHP_MAJOR_VERSION.'.'.PHP_MINOR_VERSION;")
+          sudo "php-fpm${version}" -t
+
+      - name: MariaDB started with the generated configuration
+        run: |
+          sudo systemctl is-active mariadb
+          # Confirm the tuned values actually took effect rather than being
+          # written to a file the server never read.
+          sudo mariadb -e "SELECT @@innodb_buffer_pool_size, @@max_connections, @@innodb_flush_log_at_trx_commit;"
+
+      - name: Create a site
+        run: |
+          sudo ./ngxsetup site add ci-test.example.com --wordpress --self-signed --verbose
+          sudo nginx -t
+          sudo ./ngxsetup site list
+
+      - name: The site serves WordPress
+        run: |
+          # Resolve the test domain locally and confirm nginx routes to the
+          # right pool and PHP executes.
+          echo "127.0.0.1 ci-test.example.com" | sudo tee -a /etc/hosts
+          sudo systemctl restart nginx
+          status=$(curl -sk -o /dev/null -w '%{http_code}' https://ci-test.example.com/)
+          echo "HTTP $status"
+          # WordPress redirects to its installer, so anything in the 2xx/3xx
+          # range means PHP ran and the pool socket was reachable.
+          case "$status" in 2*|3*) ;; *) echo "unexpected status"; exit 1 ;; esac
+
+      - name: Site isolation is real
+        run: |
+          # The pool must run as the site's own user, not www-data.
+          sudo ps -eo user,args | grep '[p]hp-fpm: pool ci-test' | head -1
+          sudo ps -eo user,args | grep '[p]hp-fpm: pool ci-test' | grep -q '^web-ci-test' \
+            || { echo "pool is not running as the site user"; exit 1; }
+          # wp-config.php must not be world-readable.
+          perms=$(sudo stat -c '%a' /var/www/ci-test-example-com/public/wp-config.php)
+          echo "wp-config.php mode: $perms"
+          [ "$((0$perms & 0004))" -eq 0 ] || { echo "wp-config.php is world-readable"; exit 1; }
+
+      - name: Applying twice changes nothing
+        run: |
+          sudo ./ngxsetup tune --apply > /tmp/second-apply.log 2>&1
+          cat /tmp/second-apply.log
+          if grep -qE '^\s*(✓|created|updated)' /tmp/second-apply.log; then
+            echo "second apply reported changes; the configuration is not idempotent"
+            exit 1
+          fi
+
+      - name: Remove the site cleanly
+        run: |
+          sudo ./ngxsetup site remove ci-test.example.com --purge-files --purge-db --yes
+          sudo nginx -t
+          # The pool, the vhost and the database user must all be gone.
+          ! sudo test -e /etc/nginx/sites-enabled/ci-test-example-com.conf
+          ! sudo mariadb -e "SELECT 1" ci_test_example_com 2>/dev/null
+
+      - name: Diagnostics
+        run: sudo ./ngxsetup doctor || true

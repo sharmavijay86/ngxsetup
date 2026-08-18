@@ -1,0 +1,76 @@
+##
+# fail2ban jails
+#
+# Written to jail.d/ rather than by copying jail.conf to jail.local and
+# appending, which is what the previous setup did on every run — producing a
+# file with the same section defined repeatedly and unpredictable precedence.
+#
+# These jails read the per-site nginx access logs. That only works because
+# access logging is enabled; it was globally disabled in the previous nginx
+# configuration, so no jail could ever have matched a single line.
+##
+
+[DEFAULT]
+backend  = {{ .Backend }}
+bantime  = 1h
+findtime = 10m
+maxretry = 5
+{{- if .IgnoreIPs }}
+ignoreip = {{ .IgnoreIPs }}
+{{- end }}
+
+# Repeat offenders earn exponentially longer bans, capped at a week.
+bantime.increment = true
+bantime.factor = 2
+bantime.maxtime = 1w
+
+[sshd]
+enabled  = true
+# sshd logs to the journal, not a file, on any current Debian or Ubuntu — the
+# only jail here for which the systemd backend is actually correct.
+backend  = systemd
+maxretry = 4
+bantime  = 2h
+
+[nginx-http-auth]
+enabled = true
+logpath = /var/log/nginx/*.error.log
+
+[nginx-limit-req]
+# Fires when a client keeps hitting the rate limits defined in nginx. Being
+# throttled once is normal; being throttled repeatedly is a bot.
+enabled  = true
+logpath  = /var/log/nginx/*.error.log
+maxretry = 20
+findtime = 5m
+bantime  = 1h
+
+[ngxsetup-wp-login]
+enabled  = true
+port     = http,https
+filter   = ngxsetup-wp-login
+logpath  = /var/log/nginx/*.access.log
+maxretry = 8
+findtime = 10m
+bantime  = 4h
+
+[ngxsetup-xmlrpc]
+enabled  = true
+port     = http,https
+filter   = ngxsetup-xmlrpc
+logpath  = /var/log/nginx/*.access.log
+maxretry = 3
+findtime = 10m
+bantime  = 24h
+
+[ngxsetup-scanner]
+# Probes for paths that exist only in other stacks — phpMyAdmin at guessed
+# locations, .env files, admin panels. A client asking for these is enumerating,
+# not browsing.
+enabled  = true
+port     = http,https
+filter   = ngxsetup-scanner
+logpath  = /var/log/nginx/*.access.log
+maxretry = 6
+findtime = 5m
+bantime  = 24h

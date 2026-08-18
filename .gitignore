@@ -35,3 +35,4 @@ coverage.*
 
 # Optional: vendor (uncomment if you use it)
 # /vendor/
+LIVE-TEST-LOG.md
